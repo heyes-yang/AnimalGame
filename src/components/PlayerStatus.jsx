@@ -72,9 +72,18 @@ const PlayerStatus = ({ players, userPlayer, onUpdateUserPlayer, currentPrice, w
     setPlayerProfits(profits);
   }, [players, currentPrice]);
 
-  const validPlayers = Object.entries(players).filter(([key, player]) =>
-    player.name && (player.name.trim() !== '' || key === 'rabbit')
-  );
+  const validPlayers = Object.entries(players).filter(([key, player]) => {
+    // 过滤无效玩家
+    if (!player.name || (player.name.trim() === '' && key !== 'rabbit')) {
+      return false;
+    }
+    // 排除已离开的动物（不在动物状态卡片中显示）
+    const playerStatus = animalStatus?.[key]?.status;
+    if (playerStatus === ANIMAL_STATUS.LEFT) {
+      return false;
+    }
+    return true;
+  });
 
   const sortedPlayers = validPlayers.sort(([keyA], [keyB]) => {
     if (keyA === 'user') return -1;

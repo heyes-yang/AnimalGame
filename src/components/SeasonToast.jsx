@@ -1,29 +1,56 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 
 const SeasonToast = ({ isVisible, year, month, season, weather, onClose }) => {
   const [opacity, setOpacity] = useState(0);
+  const timerRef = useRef(null);
+  const closeTimerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
 
+  // 保持 onClose 引用最新
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // 处理显示/隐藏逻辑
+  useEffect(() => {
+    // 清理之前的定时器
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+
     if (isVisible) {
       // 渐入
       setTimeout(() => setOpacity(1), 50);
-      // 2秒后开始渐出
-      const fadeOutTimer = setTimeout(() => {
+      
+      // 1.5秒后开始渐出
+      timerRef.current = setTimeout(() => {
         setOpacity(0);
+      }, 1500);
+      
+      // 2秒后完全关闭
+      closeTimerRef.current = setTimeout(() => {
+        if (onCloseRef.current) {
+          onCloseRef.current();
+        }
       }, 2000);
-      // 3秒后完全关闭（渐出动画1秒）
-      const closeTimer = setTimeout(() => {
-        if (onClose) onClose();
-      }, 3000);
-
-      return () => {
-        clearTimeout(fadeOutTimer);
-        clearTimeout(closeTimer);
-      };
     } else {
       setOpacity(0);
     }
-  }, [isVisible, onClose]);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, [isVisible]); // 只依赖 isVisible，不依赖 onClose
 
   if (!isVisible && opacity === 0) return null;
 
@@ -66,14 +93,14 @@ const SeasonToast = ({ isVisible, year, month, season, weather, onClose }) => {
       className="fixed top-16 left-0 right-0 flex justify-center pointer-events-none z-50"
       style={{
         opacity,
-        transition: 'opacity 0.8s ease-in-out'
+        transition: 'opacity 0.5s ease-in-out'
       }}
     >
       <div
         className={`bg-gradient-to-br ${colors.bg} backdrop-blur-md rounded-xl shadow-2xl px-6 py-3`}
         style={{
           transform: `translateY(${opacity === 1 ? '0' : '-20px'})`,
-          transition: 'transform 1s ease-out'
+          transition: 'transform 0.5s ease-out'
         }}
       >
         <div className="flex items-center gap-3">

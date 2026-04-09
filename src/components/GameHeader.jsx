@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCcw, Pause, Play, FastForward, User, Users, Building2 } from 'lucide-react';
+import { RotateCcw, Pause, Play, FastForward, User, Users, Building2, Home } from 'lucide-react';
 import { WEATHER_TYPES, SEASONS } from '../hooks/usePriceFluctuation';
 import { getMomoAnnouncement } from '../data/chatMessages';
 
@@ -24,7 +24,9 @@ const GameHeader = ({
   onOpenAnnualSummary, // 打开年度大会回调
   onOpenMyInfo, // 打开“我的”弹窗
   onOpenAnimals, // 打开“动物”弹窗
-  onOpenDreamCompany // 打开“梦想公司”弹窗
+  onOpenDreamCompany, // 打开“梦想公司”弹窗
+  onOpenResidents, // 打开“居民”弹窗
+  isAfterAnnualMeeting = false // 是否刚结束年度大会（公司按钮置灰）
 }) => {
   const month = gameTime.getMonth();
   const year = gameTime.getFullYear();
@@ -151,9 +153,19 @@ const GameHeader = ({
           </div>
         </div>
         <div className="flex items-center space-x-1">
+          {/* 居民按钮 */}
+          <button
+            onClick={onOpenResidents}
+            className="flex items-center space-x-0.5 px-2 py-1 rounded transition-colors text-xs font-medium bg-cyan-500 hover:bg-cyan-600 text-white"
+          >
+            <Home className="h-3 w-3" />
+            <span className="hidden sm:inline">居民</span>
+          </button>
+          
           {/* 梦想公司按钮 */}
           <button
             onClick={onOpenDreamCompany}
+            title="查看森林梦想公司"
             className="flex items-center space-x-0.5 px-2 py-1 rounded transition-colors text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white"
           >
             <Building2 className="h-3 w-3" />

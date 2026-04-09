@@ -14,7 +14,9 @@ import MyInfoModal from '../components/MyInfoModal';
 import AnimalsModal from '../components/AnimalsModal';
 import SeasonToast from '../components/SeasonToast';
 import DreamCompanyModal from '../components/DreamCompanyModal';
-import { ANIMAL_LIFECYCLE_CONFIG } from '../data/animalTemplates';
+import ResidentsModal from '../components/ResidentsModal';
+import { ANIMAL_LIFECYCLE_CONFIG, ANIMAL_STATUS } from '../data/animalTemplates';
+import { uiLogger, companyLogger, gameLogger } from '../utils/logger';
 
 const Index = () => {
   const gameState = useGameState();
@@ -49,7 +51,9 @@ const Index = () => {
     monthStartPrice, // 【新增】月初价格
     dreamCompany, // 梦想公司状态
     setDreamCompany, // 设置梦想公司状态
-    DREAM_COMPANY // 梦想公司配置
+    DREAM_COMPANY, // 梦想公司配置
+    animalStatus, // 动物状态
+    setAnimalStatus // 设置动物状态
   } = gameState;
 
   const gameActions = useGameActions(gameState);
@@ -70,6 +74,38 @@ const Index = () => {
   const [showMyInfo, setShowMyInfo] = useState(false);
   const [showAnimals, setShowAnimals] = useState(false);
   const [showDreamCompany, setShowDreamCompany] = useState(false); // 梦想公司弹窗
+  const [showResidents, setShowResidents] = useState(false); // 居民弹窗
+  
+  // 【新增】统一的弹框暂停/恢复逻辑 - 任何弹框打开时暂停游戏
+  const pausedByModalRef = useRef(false); // 标记是否因弹框而暂停
+  const wasPausedBeforeModalRef = useRef(false); // 记录弹框打开前是否已暂停
+  const modalStates = [showMyInfo, showAnimals, showDreamCompany, showResidents, showAnnualSummary];
+  const anyModalOpen = modalStates.some(Boolean);
+  
+  useEffect(() => {
+    if (anyModalOpen) {
+      // 有弹框打开
+      if (!isPaused) {
+        // 游戏未暂停，记录状态并暂停
+        wasPausedBeforeModalRef.current = false;
+        pausedByModalRef.current = true;
+        togglePause();
+        uiLogger.debug('⏸️ 弹框打开，游戏暂停');
+      }
+      // 如果已经暂停了（可能是用户手动暂停或其他原因），不做处理
+    } else {
+      // 所有弹框关闭
+      if (isPaused && pausedByModalRef.current) {
+        // 游戏暂停中，且是因为弹框暂停的，则恢复
+        pausedByModalRef.current = false;
+        togglePause();
+        uiLogger.debug('▶️ 所有弹框关闭，游戏恢复');
+      }
+    }
+  }, [anyModalOpen, isPaused, togglePause]);
+  
+  // 年度大会交易状态 - 记录当前年份是否已完成公司交易
+  const [annualMeetingCompletedYear, setAnnualMeetingCompletedYear] = useState(null);
 
   // 季节天气提示状态
   const [seasonToast, setSeasonToast] = useState({
@@ -134,6 +170,8 @@ const Index = () => {
   // 打开年度大会查看历史
   const handleOpenAnnualSummary = useCallback(() => {
     const currentYear = gameTime?.getFullYear() || 2000;
+    // 计算当前游戏年度
+    const currentGameYear = currentYear - 1999; // 2000年=第1年
     
     if (annualSummaries.length > 0) {
       // 显示最近一年的年度大会
@@ -144,24 +182,31 @@ const Index = () => {
     } else {
       // 第一年：显示初始状态的数据（数据归零）
       const initialSummaryData = {
-        year: currentYear - 1, // 显示上一年度（虽然还没过完）
+        year: currentGameYear, // 使用当前游戏年度
         stats: {
           startPrice: currentPrice,
           endPrice: currentPrice,
           priceChange: 0,
-          playerStats: Object.entries(players).map(([key, player]) => ({
-            key,
-            name: player.name,
-            icon: player.icon,
-            money: player.money,
-            shares: player.shares,
-            totalValue: player.money + (player.shares * currentPrice),
-            initialValue: player.money + (player.shares * currentPrice),
-            profit: 0,
-            profitRate: 0,
-            rank: 1,
-            isUser: userPlayer?.name === player.name
-          })).sort((a, b) => b.totalValue - a.totalValue),
+          playerStats: Object.entries(players).map(([key, player]) => {
+            // 考虑冻结资产计算总价值
+            const frozenMoney = player.frozenMoney || 0;
+            const frozenShares = player.frozenShares || 0;
+            const totalValue = (player.money || 0) + frozenMoney + 
+                               ((player.shares || 0) + frozenShares) * currentPrice;
+            return {
+              key,
+              name: player.name,
+              icon: player.icon,
+              money: player.money,
+              shares: player.shares,
+              totalValue,
+              initialValue: totalValue, // 初始值等于当前值
+              profit: 0,
+              profitRate: 0,
+              rank: 1,
+              isUser: userPlayer?.name === player.name
+            };
+          }).sort((a, b) => b.totalValue - a.totalValue),
           bestPlayer: null,
         },
         donations: [],
@@ -186,23 +231,27 @@ const Index = () => {
     setShowAnnualSummary(false);
     setIsViewingHistory(false);
     
-    // 【新增】年度大会结束后自动取消暂停，继续游戏
-    if (isPaused) {
-      togglePause();
-      console.log('▶️ 年度大会结束，自动取消暂停，游戏继续');
+    // 记录当前年份已完成年度大会
+    if (gameTime && !isViewingHistory) {
+      setAnnualMeetingCompletedYear(gameTime.getFullYear());
     }
-  }, [isPaused, togglePause]);
+    
+    // 暂停/恢复由统一的弹框管理逻辑处理，这里不再需要手动处理
+  }, [gameTime, isViewingHistory]);
 
   // 处理公司交易回调
   const handleCompanyTrade = useCallback((direction, price, shares, participants) => {
-    console.log(`🏛️ 执行公司交易: ${direction} ${shares}股 @ ¥${price}`);
+    companyLogger.log(`🏛️ 执行公司交易: ${direction} ${shares}股 @ ¥${price}`);
+    
+    // 计算实际总认购量
+    const totalSubscribed = participants.reduce((sum, p) => sum + p.shares, 0);
     
     // 更新梦想公司状态
     setDreamCompany(prev => {
-      const tradeAmount = price * shares;
+      const tradeAmount = price * totalSubscribed; // 按实际认购量计算
       const newShares = direction === 'buy' 
-        ? prev.shares - shares // 回购：公司股份减少
-        : prev.shares + shares; // 发行：公司股份增加
+        ? prev.shares - totalSubscribed // 回购：公司股份减少
+        : prev.shares + totalSubscribed; // 发行：公司股份增加（卖出给参与者后公司持有增加）
       const newMoney = direction === 'buy'
         ? prev.money - tradeAmount // 回购：公司花钱
         : prev.money + tradeAmount; // 发行：公司收钱
@@ -221,7 +270,7 @@ const Index = () => {
         shares: newShares,
         money: newMoney,
         yearlyProfit: newYearlyProfit,
-        totalTradedShares: prev.totalTradedShares + shares,
+        totalTradedShares: prev.totalTradedShares + totalSubscribed,
         yearlyBuyAmount: newYearlyBuyAmount,
         yearlySellAmount: newYearlySellAmount
       };
@@ -247,25 +296,63 @@ const Index = () => {
               money: updated[playerKey].money + revenue
             };
             remainingShares -= tradeShares;
-            console.log(`  📤 ${updated[playerKey].name}: 卖出${tradeShares}股，收入¥${revenue.toFixed(2)}`);
+            companyLogger.debug(`  📤 ${updated[playerKey].name}: 卖出${tradeShares}股，收入¥${revenue.toFixed(2)}`);
           }
         });
       } else {
-        // 公司发行：参与者买入股份
-        let remainingShares = shares;
+        // 公司发行新股：参与者认购
         participants.forEach(p => {
-          if (remainingShares <= 0) return;
           const playerKey = p.key;
-          const cost = price * p.shares;
+          const tradeShares = p.shares; // 实际分配到的股数
+          const cost = price * tradeShares;
           
-          if (updated[playerKey] && updated[playerKey].money >= cost) {
-            updated[playerKey] = {
-              ...updated[playerKey],
-              shares: updated[playerKey].shares + p.shares,
-              money: updated[playerKey].money - cost
-            };
-            remainingShares -= p.shares;
-            console.log(`  📥 ${updated[playerKey].name}: 买入${p.shares}股，支出¥${cost.toFixed(2)}`);
+          if (updated[playerKey]) {
+            // 先计算当前可用现金
+            let availableMoney = updated[playerKey].money;
+            let currentShares = updated[playerKey].shares;
+            
+            // 检查是否需要先卖股票
+            if (p.needToSellShares && p.sharesToSell > 0) {
+              // 确保不会卖出超过持有的股数
+              const sharesToSell = Math.min(p.sharesToSell, currentShares);
+              if (sharesToSell > 0) {
+                const sellRevenue = sharesToSell * currentPrice;
+                currentShares -= sharesToSell;
+                availableMoney += sellRevenue;
+                companyLogger.debug(`  💰 ${updated[playerKey].name}: 先卖出${sharesToSell}股，获得¥${sellRevenue.toFixed(2)}`);
+              }
+            }
+            
+            // 检查是否有足够现金认购
+            if (availableMoney >= cost) {
+              // 有足够现金，完成认购
+              updated[playerKey] = {
+                ...updated[playerKey],
+                shares: currentShares + tradeShares,
+                money: availableMoney - cost
+              };
+              companyLogger.debug(`  📥 ${updated[playerKey].name}: 认购${tradeShares}股，花费¥${cost.toFixed(2)}`);
+            } else if (tradeShares > 0) {
+              // 现金不足（可能是卖股票后仍不够），按实际能买的数量认购
+              const affordableShares = Math.floor(availableMoney / price);
+              if (affordableShares > 0) {
+                const actualCost = affordableShares * price;
+                updated[playerKey] = {
+                  ...updated[playerKey],
+                  shares: currentShares + affordableShares,
+                  money: availableMoney - actualCost
+                };
+                companyLogger.debug(`  📥 ${updated[playerKey].name}: 现金不足，仅认购${affordableShares}股`);
+              } else {
+                // 完全无法认购，恢复卖股票后的状态
+                updated[playerKey] = {
+                  ...updated[playerKey],
+                  shares: currentShares,
+                  money: availableMoney
+                };
+                companyLogger.debug(`  ⚠️ ${updated[playerKey].name}: 现金不足，无法认购`);
+              }
+            }
           }
         });
       }
@@ -273,25 +360,16 @@ const Index = () => {
       return updated;
     });
     
-    // 同步更新用户玩家
-    if (userPlayer && participants.find(p => p.key === 'user')) {
-      const userP = participants.find(p => p.key === 'user');
+    // 如果是用户参与，更新 userPlayer
+    const userParticipant = participants.find(p => p.key === 'user');
+    if (userParticipant) {
       setUserPlayer(prev => {
-        if (direction === 'buy') {
-          const revenue = price * userP.shares;
-          return {
-            ...prev,
-            shares: prev.shares - userP.shares,
-            money: prev.money + revenue
-          };
-        } else {
-          const cost = price * userP.shares;
-          return {
-            ...prev,
-            shares: prev.shares + userP.shares,
-            money: prev.money - cost
-          };
-        }
+        const cost = price * userParticipant.shares;
+        return {
+          ...prev,
+          shares: prev.shares + userParticipant.shares,
+          money: prev.money - cost
+        };
       });
     }
     
@@ -300,14 +378,14 @@ const Index = () => {
       id: Date.now() + Math.random(),
       type: '公司交易',
       player: '森林梦想公司',
-      action: direction === 'buy' ? `回购${shares}股` : `发行${shares}股`,
+      action: direction === 'buy' ? `回购${totalSubscribed}股` : `发行${totalSubscribed}股`,
       price: price,
-      shares: shares,
+      shares: totalSubscribed,
       time: new Date().toLocaleTimeString()
     }]);
     
-    console.log(`✅ 公司交易完成`);
-  }, [setDreamCompany, setPlayers, setUserPlayer, setTransactions, userPlayer]);
+    companyLogger.log(`✅ 公司交易完成`);
+  }, [currentPrice, setDreamCompany, setPlayers, setUserPlayer, setTransactions]);
 
   // 启动价格波动逻辑
   usePriceFluctuation(gameState);
@@ -324,7 +402,7 @@ const Index = () => {
         shares: companyShares,
         initialized: true
       }));
-      console.log(`🏛️ 游戏开始，梦想公司持有 ${companyShares} 股`);
+      gameLogger.log(`🏛️ 游戏开始，梦想公司持有 ${companyShares} 股`);
     }
   }, [userPlayer, gameStarted, setGameStarted, players, setDreamCompany]);
 
@@ -349,25 +427,9 @@ const Index = () => {
       processedYearsRef.current = new Set();
       lastYearRef.current = null;
       lastTransactionCountRef.current = 0;
+      setAnnualMeetingCompletedYear(null); // 重置年度大会完成状态
     }
   }, [gameStarted, userPlayer]);
-
-  // 检查游戏失败条件 - 【修改】资金不足不退出游戏，而是只能打工
-  const lowMoneyAlertedRef = useRef(false);
-  
-  useEffect(() => {
-    if (userPlayer && typeof userPlayer.money === 'number' && userPlayer.money < ANIMAL_LIFECYCLE_CONFIG.leaveConditions.minMoney) {
-      // 检查用户是否已经在打工中
-      const isUserWorking = workingPlayers && workingPlayers.user;
-      
-      if (!isUserWorking && !lowMoneyAlertedRef.current) {
-        lowMoneyAlertedRef.current = true;
-        alert(`⚠️ 资金不足！\n你的资金已低于¥${ANIMAL_LIFECYCLE_CONFIG.leaveConditions.minMoney}，无法进行交易。\n\n请点击"外出打工"按钮赚取薪资！`);
-      }
-    } else if (userPlayer && userPlayer.money >= ANIMAL_LIFECYCLE_CONFIG.leaveConditions.minMoney) {
-      lowMoneyAlertedRef.current = false;
-    }
-  }, [userPlayer, workingPlayers]);
 
   // 检测年度大会触发（每年1月1日）
   useEffect(() => {
@@ -381,15 +443,13 @@ const Index = () => {
     if (month === 0 && day === 1 && !processedYearsRef.current.has(year)) {
       processedYearsRef.current.add(year);
       
-      // 【新增】年度大会开始时暂停游戏
-      if (!isPaused) {
-        togglePause();
-      }
+      // 计算游戏年度（从1年开始，即2000年是第1年）
+      const gameYear = year - 1999; // 2000年=1年, 2001年=2年...
+      const lastGameYear = gameYear - 1; // 上一个游戏年度
       
-      // 生成上一年度的总结数据
-      const lastYear = year - 1;
+      // 生成上一年度的总结数据（使用游戏年度）
       const summaryData = generateAnnualSummaryData(
-        lastYear,
+        lastGameYear, // 使用游戏年度
         players,
         priceHistory,
         currentPrice,
@@ -399,8 +459,8 @@ const Index = () => {
       setAnnualSummaryData(summaryData);
       setShowAnnualSummary(true);
       
-      // 保存年度总结到历史记录
-      setAnnualSummaries(prev => [...prev.filter(s => s.year !== lastYear), summaryData]);
+      // 保存年度总结到历史记录（使用游戏年度）
+      setAnnualSummaries(prev => [...prev.filter(s => s.year !== lastGameYear), summaryData]);
       
       // 处理捐款 - 扣除捐款金额
       if (summaryData.donations && summaryData.donations.length > 0) {
@@ -429,7 +489,7 @@ const Index = () => {
         setDonationPrivileges(prev => [...prev, ...newPrivileges]);
       }
       
-      console.log(`🎉 触发年度大会: ${lastYear}年度，游戏已暂停`);
+      gameLogger.log(`🎉 触发年度大会: 第${lastGameYear}年度，游戏已暂停`);
     }
   }, [gameTime, gameStarted, isPaused, players, priceHistory, currentPrice, userPlayer, setAnnualSummaries, setDonationPrivileges, togglePause]);
 
@@ -459,7 +519,7 @@ const Index = () => {
         season,
         weather
       });
-      console.log(`🌸 季节变化: ${season}, 天气: ${weather}`);
+      uiLogger.log(`🌸 季节变化: ${season}, 天气: ${weather}`);
     }
     
     // 更新上一次的季节（只在季节真正改变时更新）
@@ -546,6 +606,8 @@ const Index = () => {
           onOpenMyInfo={() => setShowMyInfo(true)}
           onOpenAnimals={() => setShowAnimals(true)}
           onOpenDreamCompany={() => setShowDreamCompany(true)}
+          onOpenResidents={() => setShowResidents(true)}
+          isAfterAnnualMeeting={annualMeetingCompletedYear === gameTime?.getFullYear()}
         />
         
         {!userPlayer && (
@@ -649,6 +711,18 @@ const Index = () => {
         dreamCompany={dreamCompany}
         currentPrice={currentPrice}
         DREAM_COMPANY={DREAM_COMPANY}
+      />
+
+      {/* 居民弹窗 */}
+      <ResidentsModal
+        isOpen={showResidents}
+        onClose={() => setShowResidents(false)}
+        players={players}
+        currentPrice={currentPrice}
+        workingPlayers={workingPlayers}
+        animalStatus={animalStatus}
+        dreamCompany={dreamCompany}
+        monthStartPrice={monthStartPrice}
       />
     </div>
   );

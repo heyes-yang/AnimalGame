@@ -15,7 +15,11 @@ import {
   getAnimalChatMessage, 
   generateRandomChatMessage,
   getWeatherChatMessage,
-  getAnnualMeetingChatMessage
+  getAnnualMeetingChatMessage,
+  leaveMarketMessages,
+  rejoinMarketMessages,
+  getLeaveMessage,
+  getRejoinMessage
 } from '../data/chatMessages';
 import { 
   ANIMAL_TEMPLATES, 
@@ -26,6 +30,7 @@ import {
   getAnimalSalaryRange,
   calculateWorkSalary
 } from '../data/animalTemplates';
+import { tradeLogger, orderLogger, lifecycleLogger, checkLogger } from '../utils/logger';
 
 const INITIAL_PRICE = 1.0;
 
@@ -94,7 +99,9 @@ export const usePriceFluctuation = (gameState) => {
     animalStatus, // 【新增】动物状态
     setAnimalStatus, // 【新增】设置动物状态
     gameStartMonth, // 【新增】游戏开始月份
-    setGameStartMonth // 【新增】设置游戏开始月份
+    setGameStartMonth, // 【新增】设置游戏开始月份
+    dreamCompany, // 【新增】梦想公司状态
+    setDreamCompany // 【新增】设置梦想公司状态
   } = gameState;
 
   // 获取 gameTime
@@ -151,8 +158,9 @@ export const usePriceFluctuation = (gameState) => {
     const updatedCounters = { ...orderCounters };
     let todayVolume = 0; // 当日成交量累计
 
-    // 每天进行2次撮合
-    const maxMatchesPerRound = 2;
+    // 【改进】每天撮合直到无法继续或达到上限
+    // 增加撮合次数到6次，加快撮合效率
+    const maxMatchesPerRound = 6;
 
     for (let round = 0; round < maxMatchesPerRound; round++) {
       // 检查是否还有订单可以撮合
@@ -175,11 +183,11 @@ export const usePriceFluctuation = (gameState) => {
           // 现价应该在卖价和买价之间，否则取中间价
           if (currentPrice >= sellOrder.price && currentPrice <= buyOrder.price) {
             tradePrice = Number(currentPrice.toFixed(3));
-            console.log(`💰 价格差距${priceGap.toFixed(2)}% > 1%，按现价¥${tradePrice}成交（卖价¥${sellOrder.price} vs 买价¥${buyOrder.price}）`);
+            tradeLogger.log(`💰 价格差距${priceGap.toFixed(2)}% > 1%，按现价¥${tradePrice}成交`);
           } else {
             // 现价不在买卖区间内，取中间价
             tradePrice = Number(((buyOrder.price + sellOrder.price) / 2).toFixed(3));
-            console.log(`💰 现价¥${currentPrice}不在买卖区间内，取中间价¥${tradePrice}`);
+            tradeLogger.log(`💰 现价¥${currentPrice}不在买卖区间内，取中间价¥${tradePrice}`);
           }
         } else {
           // 价格差距不超过1%，取中间价
@@ -192,7 +200,7 @@ export const usePriceFluctuation = (gameState) => {
         // 累加当日成交量
         todayVolume += tradeShares;
 
-        console.log(`🔄 撮合成交(第${round + 1}次): 买一${buyOrder.player}(¥${buyOrder.price}) ↔ 卖一${sellOrder.player}(¥${sellOrder.price}), 成交价¥${tradePrice}(中间价), 数量${tradeShares}股`);
+        tradeLogger.log(`🔄 撮合成交(第${round + 1}次): ${buyOrder.player} ↔ ${sellOrder.player}, 成交价¥${tradePrice}, 数量${tradeShares}股`);
 
         // 创建成交记录
         newTransactions.push({
@@ -222,7 +230,7 @@ export const usePriceFluctuation = (gameState) => {
             // 返还差额（委托价 > 成交价时）
             const refundMoney = frozenMoneyUsed - actualCost;
             
-            console.log(`📥 买方 ${updated[buyerKey].name}: 成交${tradeShares}股@¥${tradePrice}, 实付¥${actualCost.toFixed(2)}, 原冻结¥${frozenMoneyUsed.toFixed(2)}, 返还¥${refundMoney.toFixed(2)}`);
+            tradeLogger.log(`📥 买方 ${updated[buyerKey].name}: 成交${tradeShares}股@¥${tradePrice}`);
             
             updated[buyerKey] = {
               ...updated[buyerKey],
@@ -243,7 +251,7 @@ export const usePriceFluctuation = (gameState) => {
             const oldFrozenShares = updated[sellerKey].frozenShares || 0;
             const newFrozenShares = Math.max(0, oldFrozenShares - tradeShares);
             
-            console.log(`📤 卖方 ${updated[sellerKey].name}: 成交${tradeShares}股@¥${tradePrice}, 收入¥${revenue.toFixed(2)}, 冻结股份 ${oldFrozenShares} -> ${newFrozenShares}`);
+            tradeLogger.log(`📤 卖方 ${updated[sellerKey].name}: 成交${tradeShares}股@¥${tradePrice}, 收入¥${revenue.toFixed(2)}`);
             
             updated[sellerKey] = {
               ...updated[sellerKey],
@@ -272,7 +280,7 @@ export const usePriceFluctuation = (gameState) => {
               const frozenMoneyUsed = buyOrder.price * tradeShares;
               const refundMoney = frozenMoneyUsed - actualCost;
               
-              console.log(`📥 用户买单成交: ${tradeShares}股@¥${tradePrice}, 实付¥${actualCost.toFixed(2)}, 返还¥${refundMoney.toFixed(2)}`);
+              tradeLogger.log(`📥 用户买单成交: ${tradeShares}股@¥${tradePrice}`);
               
               return {
                 ...prev,
@@ -289,7 +297,7 @@ export const usePriceFluctuation = (gameState) => {
               const oldFrozenShares = prev.frozenShares || 0;
               const newFrozenShares = Math.max(0, oldFrozenShares - tradeShares);
               
-              console.log(`📤 用户卖单成交: ${tradeShares}股@¥${tradePrice}, 收入¥${revenue.toFixed(2)}, 冻结股份 ${oldFrozenShares} -> ${newFrozenShares}`);
+              tradeLogger.log(`📤 用户卖单成交: ${tradeShares}股@¥${tradePrice}, 收入¥${revenue.toFixed(2)}`);
               
               return {
                 ...prev,
@@ -356,7 +364,7 @@ export const usePriceFluctuation = (gameState) => {
     if (setDailyVolumes) {
       setDailyVolumes(prev => [...prev, todayVolume]);
       if (todayVolume > 0) {
-        console.log(`📊 今日成交量: ${todayVolume}股`);
+        tradeLogger.log(`📊 今日成交量: ${todayVolume}股`);
       }
     }
   }, [orders, orderCounters, setOrders, setOrderCounters, setTransactions, setPlayers, userPlayer, setUserPlayer, setCurrentPrice, setPriceHistory, isPaused, setDailyVolumes]);
@@ -378,7 +386,7 @@ export const usePriceFluctuation = (gameState) => {
 
     const playerEntries = Object.entries(players);
 
-    console.log(`📋 开始生成动物订单，当前季节: ${currentSeason}`);
+    orderLogger.log(`📋 开始生成动物订单，当前季节: ${currentSeason}`);
     
     playerEntries.forEach(([key, player]) => {
       // 跳过用户玩家
@@ -387,22 +395,22 @@ export const usePriceFluctuation = (gameState) => {
       // 【新增】检查动物状态
       const currentStatus = animalStatus?.[key]?.status || ANIMAL_STATUS.ACTIVE;
       if (currentStatus === ANIMAL_STATUS.LEFT) {
-        console.log(`  ⏭️ ${player?.name || key} 已离开游戏，跳过`);
+        orderLogger.debug(`  ⏭️ ${player?.name || key} 已离开游戏，跳过`);
         return;
       }
       if (currentStatus === ANIMAL_STATUS.HIBERNATING) {
         // 冬眠期间有很小的概率会醒来交易
         if (Math.random() > HIBERNATION_CONFIG.tradeProbabilityDuringHibernation) {
-          console.log(`  😴 ${player?.name || key} 正在冬眠中，跳过`);
+          orderLogger.debug(`  😴 ${player?.name || key} 正在冬眠中，跳过`);
           return;
         } else {
-          console.log(`  😴 ${player?.name || key} 冬眠中短暂醒来，进行交易`);
+          orderLogger.debug(`  😴 ${player?.name || key} 冬眠中短暂醒来，进行交易`);
         }
       }
       
       // 跳过打工中的玩家
       if (workingPlayers && workingPlayers[key]) {
-        console.log(`  ⏭️ ${player?.name || key} 正在打工中，跳过`);
+        orderLogger.debug(`  ⏭️ ${player?.name || key} 正在打工中，跳过`);
         return;
       }
       
@@ -412,28 +420,28 @@ export const usePriceFluctuation = (gameState) => {
       
       // 添加玩家数据有效性检查
       if (!player || typeof player.money !== 'number' || typeof player.shares !== 'number') {
-        console.warn('玩家数据无效:', key, player);
+        console.warn('⚠️ 玩家数据无效:', key, player);
         return;
       }
       
       // 亏损90%离场
       if (player.money < player.initialMoney * 0.1) {
-        console.log(`  ⏭️ ${player.name} 亏损超过90%，跳过`);
+        orderLogger.debug(`  ⏭️ ${player.name} 亏损超过90%，跳过`);
         return;
       }
 
       // 获取该动物在当前季节的积极性
       const activity = getActivityBySeason(key, currentSeason);
-      console.log(`  🐾 ${player.name}: 资金¥${player.money.toFixed(2)}, 股份${player.shares}, 积极性${(activity * 100).toFixed(0)}%, 已有买单${existingBuyOrders}个, 卖单${existingSellOrders}个`);
+      orderLogger.debug(`  🐾 ${player.name}: 资金¥${player.money.toFixed(0)}, 股份${player.shares}, 积极性${(activity * 100).toFixed(0)}%`);
       
       // 根据积极性决定是否生成订单
       if (Math.random() > activity) {
-        console.log(`    ❌ 积极性检查未通过，今天不交易`);
+        orderLogger.debug(`    ❌ 积极性检查未通过，今天不交易`);
         return;
       }
 
-      // 使用策略决定买卖方向
-      const orderType = decideTradeDirection(key, player, currentPrice, priceHistory);
+      // 使用策略决定买卖方向（传入月初价格用于涨跌停情绪反应）
+      const orderType = decideTradeDirection(key, player, currentPrice, priceHistory, monthStartPrice);
       
       // 【修改】获取当前最高买单价格，供卖单参考
       const highestBuyPrice = orders.buy.length > 0 
@@ -453,15 +461,15 @@ export const usePriceFluctuation = (gameState) => {
       const orderShares = generateOrderShares(key, availableShares, availableMoney, currentPrice);
 
       // 检查资源是否足够并创建订单
-      console.log(`    🎯 决定${orderType === 'buy' ? '买入' : '卖出'}，价格¥${orderPrice.toFixed(3)}，数量${orderShares}股`);
+      orderLogger.debug(`    🎯 决定${orderType === 'buy' ? '买入' : '卖出'}，价格¥${orderPrice.toFixed(3)}，数量${orderShares}股`);
       
       if (orderType === 'buy' && availableMoney >= orderPrice * orderShares) {
         // 检查买单数量是否已达上限
         if (existingBuyOrders >= 3) {
-          console.log(`    ❌ 买单已达上限(3个)，跳过`);
+          orderLogger.debug(`    ❌ 买单已达上限(3个)，跳过`);
           return;
         }
-        console.log(`    ✅ 生成买单委托: ¥${orderPrice.toFixed(3)} × ${orderShares}股`);
+        orderLogger.log(`    ✅ 生成买单委托: ¥${orderPrice.toFixed(3)} × ${orderShares}股`);
         
         // 买单：冻结资金
         const frozenMoney = orderPrice * orderShares;
@@ -486,16 +494,19 @@ export const usePriceFluctuation = (gameState) => {
         playerUpdates[key].money -= frozenMoney;
         playerUpdates[key].frozenMoney += frozenMoney;
         
-        // 生成聊天消息
-        const chatMsg = getAnimalChatMessage(key, 'buy');
-        newChatMessages.push(chatMsg);
+        // 生成聊天消息（50%概率，交易数量超过1000股时概率增加到80%）
+        const chatProbability = orderShares >= 1000 ? 0.8 : 0.5;
+        if (Math.random() < chatProbability) {
+          const chatMsg = getAnimalChatMessage(key, 'buy');
+          newChatMessages.push(chatMsg);
+        }
       } else if (orderType === 'sell' && availableShares >= orderShares) {
         // 检查卖单数量是否已达上限
         if (existingSellOrders >= 3) {
-          console.log(`    ❌ 卖单已达上限(3个)，跳过`);
+          orderLogger.debug(`    ❌ 卖单已达上限(3个)，跳过`);
           return;
         }
-        console.log(`    ✅ 生成卖单委托: ¥${orderPrice.toFixed(3)} × ${orderShares}股`);
+        orderLogger.log(`    ✅ 生成卖单委托: ¥${orderPrice.toFixed(3)} × ${orderShares}股`);
         
         // 卖单：冻结股份
         const sellOrderCode = generateOrderCode(key, 'sell');
@@ -519,9 +530,12 @@ export const usePriceFluctuation = (gameState) => {
         playerUpdates[key].shares -= orderShares;
         playerUpdates[key].frozenShares += orderShares;
         
-        // 生成聊天消息
-        const chatMsg = getAnimalChatMessage(key, 'sell');
-        newChatMessages.push(chatMsg);
+        // 生成聊天消息（50%概率，交易数量超过1000股时概率增加到80%）
+        const sellChatProbability = orderShares >= 1000 ? 0.8 : 0.5;
+        if (Math.random() < sellChatProbability) {
+          const chatMsg = getAnimalChatMessage(key, 'sell');
+          newChatMessages.push(chatMsg);
+        }
       }
     });
 
@@ -546,7 +560,7 @@ export const usePriceFluctuation = (gameState) => {
     
     // 初始化新订单的计数器
     if (newOrders.buy.length > 0 || newOrders.sell.length > 0) {
-      console.log(`📋 今日生成 ${newOrders.buy.length} 个买单，${newOrders.sell.length} 个卖单`);
+      orderLogger.log(`📋 今日生成 ${newOrders.buy.length} 个买单，${newOrders.sell.length} 个卖单`);
       setOrderCounters(prev => {
         const updated = { ...prev };
         [...newOrders.buy, ...newOrders.sell].forEach(order => {
@@ -555,7 +569,7 @@ export const usePriceFluctuation = (gameState) => {
         return updated;
       });
     } else {
-      console.log(`📋 今日无新订单生成`);
+      // orderLogger.debug(`📋 今日无新订单生成`);
     }
     
     // 返回聊天消息供外部使用
@@ -615,7 +629,7 @@ export const usePriceFluctuation = (gameState) => {
         const salary = workInfo.salary || 0;
         const playerName = workInfo.playerName || playerKey;
         
-        console.log(`💼 打工完成: ${playerName}, 薪资¥${salary}`);
+        lifecycleLogger.log(`💼 打工完成: ${playerName}, 薪资¥${salary}`);
         
         // 更新玩家资金
         setPlayers(prev => {
@@ -627,7 +641,7 @@ export const usePriceFluctuation = (gameState) => {
               totalWorkIncome: (updated[playerKey].totalWorkIncome || 0) + salary,
               workingUntil: null
             };
-            console.log(`  ✅ ${updated[playerKey].name} 资金增加¥${salary}`);
+            lifecycleLogger.debug(`  ✅ ${updated[playerKey].name} 资金增加¥${salary}`);
           }
           return updated;
         });
@@ -663,6 +677,21 @@ export const usePriceFluctuation = (gameState) => {
           delete updated[playerKey];
           return updated;
         });
+
+        // 【新增】更新动物状态为活跃状态，并记录打工结束时间
+        if (playerKey !== 'user' && setAnimalStatus) {
+          setAnimalStatus(prev => ({
+            ...prev,
+            [playerKey]: {
+              ...prev[playerKey],
+              status: ANIMAL_STATUS.ACTIVE,
+              since: currentDate.toISOString(),
+              reason: '打工归来',
+              lastWorkEnd: currentDate.toISOString() // 记录打工结束时间，用于冷却期检查
+            }
+          }));
+          lifecycleLogger.log(`✅ ${playerName} 打工归来，状态更新为活跃`);
+        }
       }
     });
 
@@ -681,13 +710,16 @@ export const usePriceFluctuation = (gameState) => {
       if (key === 'user') return; // 跳过用户
       if (workingPlayers && workingPlayers[key]) return; // 已经在打工中
       
+      // 获取上次打工结束时间
+      const lastWorkEndDate = animalStatus[key]?.lastWorkEnd;
+      
       // 检查是否应该打工
-      if (checkShouldGoToWork(key, currentSeason, player)) {
+      if (checkShouldGoToWork(key, currentSeason, player, lastWorkEndDate)) {
         const { income, duration } = getWorkIncome(key);
         
-        // 计算打工结束日期
+        // 计算打工结束日期（按天数计算）
         const untilDate = new Date(gameTime);
-        untilDate.setMonth(untilDate.getMonth() + duration);
+        untilDate.setDate(untilDate.getDate() + duration);
         
         // 设置打工状态
         setWorkingPlayers(prev => ({
@@ -696,7 +728,8 @@ export const usePriceFluctuation = (gameState) => {
             untilDate: untilDate.toISOString(),
             salary: income,
             startDate: gameTime.toISOString(),
-            playerName: player.name  // 【新增】保存玩家名称
+            playerName: player.name,
+            durationDays: duration // 保存打工天数
           }
         }));
 
@@ -714,15 +747,15 @@ export const usePriceFluctuation = (gameState) => {
 
         // 生成打工消息
         const leavingMsg = getWorkMessage(key, true);
-        workAnnouncements.push(`💼 【外出打工】${player.name}: ${leavingMsg} (预计${duration}个月，薪资约¥${income})`);
+        workAnnouncements.push(`💼 【外出打工】${player.name}: ${leavingMsg} (预计${duration}天，薪资约¥${income})`);
         
-        // 添加交易记录
+        // 添加交易记录 - 记录预计薪资
         newTransactions.push({
           id: Date.now() + Math.random(),
           type: '开始打工',
           player: player.name,
-          action: `外出打工${duration}个月`,
-          price: 0,
+          action: `外出打工${duration}天`,
+          price: income, // 记录预计薪资
           shares: 0,
           time: new Date().toLocaleTimeString()
         });
@@ -748,12 +781,14 @@ export const usePriceFluctuation = (gameState) => {
   }, [isPaused, gameTime, workingPlayers, players, setWorkingPlayers, setPlayers, setUserPlayer, setChatMessages, setTransactions]);
 
   // 检查并撤回连续10轮未成交的动物订单（用户订单不自动撤回）
+  // 撤单后动物会观察市场，有一定概率以更低（买）或更高（卖）的价格重新下单
   const checkAndCancelStaleOrders = useCallback(() => {
     if (isPaused) return; // 暂停时不检查过期订单
 
     const ordersToCancel = [];
     const updatedCounters = { ...orderCounters };
     const playerRefunds = {}; // 记录需要返还给玩家的资源
+    const cancelledOrdersInfo = []; // 记录被撤单的订单信息，用于后续重新下单
 
     // 找出连续10轮未成交的动物订单
     Object.entries(updatedCounters).forEach(([orderId, count]) => {
@@ -772,7 +807,7 @@ export const usePriceFluctuation = (gameState) => {
         if (order) {
           // 跳过用户订单
           if (order.id && order.id.startsWith('user_')) {
-            console.log(`📋 用户订单 ${orderId} 不自动撤回`);
+            orderLogger.debug(`📋 用户订单 ${orderId} 不自动撤回`);
             return;
           }
           
@@ -785,10 +820,26 @@ export const usePriceFluctuation = (gameState) => {
             // 买单撤销：返还冻结的资金
             playerRefunds[playerKey].money += order.frozenMoney;
             playerRefunds[playerKey].frozenMoney -= order.frozenMoney;
+            // 记录撤单信息
+            cancelledOrdersInfo.push({
+              playerKey,
+              orderType: 'buy',
+              originalPrice: order.price,
+              originalShares: order.shares,
+              playerName: order.player
+            });
           } else if (order.type === 'sell' && order.frozenShares) {
             // 卖单撤销：返还冻结的股份
             playerRefunds[playerKey].shares += order.frozenShares;
             playerRefunds[playerKey].frozenShares -= order.frozenShares;
+            // 记录撤单信息
+            cancelledOrdersInfo.push({
+              playerKey,
+              orderType: 'sell',
+              originalPrice: order.price,
+              originalShares: order.shares,
+              playerName: order.player
+            });
           }
         }
       });
@@ -804,7 +855,7 @@ export const usePriceFluctuation = (gameState) => {
               const newFrozenMoney = Math.max(0, (updated[key].frozenMoney || 0) + refunds.frozenMoney);
               const newFrozenShares = Math.max(0, (updated[key].frozenShares || 0) + refunds.frozenShares);
               
-              console.log(`📊 ${updated[key].name} 订单超时撤回: 返还资金¥${refunds.money.toFixed(2)}, 返还股份${refunds.shares}股`);
+              orderLogger.debug(`📊 ${updated[key].name} 订单超时撤回: 返还资金¥${refunds.money.toFixed(2)}, 返还股份${refunds.shares}股`);
               
               updated[key] = {
                 ...updated[key],
@@ -839,14 +890,198 @@ export const usePriceFluctuation = (gameState) => {
         }));
       }
       setOrderCounters(updatedCounters);
+      
+      // 【新增】撤单后动物观察市场并可能重新下单
+      if (cancelledOrdersInfo.length > 0) {
+        const newOrdersAfterCancel = { buy: [], sell: [] };
+        const playerUpdatesAfterCancel = {};
+        
+        cancelledOrdersInfo.forEach(cancelledOrder => {
+          const { playerKey, orderType, originalPrice, originalShares, playerName } = cancelledOrder;
+          const player = players[playerKey];
+          
+          if (!player || playerKey === 'user') return;
+          
+          // 检查动物状态（已离开、冬眠、打工中的不重新下单）
+          const playerStatus = animalStatus?.[playerKey]?.status || ANIMAL_STATUS.ACTIVE;
+          if (playerStatus === ANIMAL_STATUS.LEFT || 
+              playerStatus === ANIMAL_STATUS.HIBERNATING || 
+              playerStatus === ANIMAL_STATUS.WORKING) {
+            return;
+          }
+          
+          // 60%概率重新下单
+          if (Math.random() > 0.6) {
+            orderLogger.debug(`📋 ${playerName} 撤单后选择观望，暂不重新下单`);
+            return;
+          }
+          
+          // 观察对手盘（买单看卖单最低价，卖单看买单最高价）
+          let newPrice = originalPrice;
+          let shouldReorder = false;
+          
+          if (orderType === 'buy') {
+            // 买单撤单后，观察卖单
+            const lowestSellPrice = orders.sell.length > 0 
+              ? Math.min(...orders.sell.map(o => Number(o.price)))
+              : currentPrice;
+            
+            // 70%概率愿意出更高价追单，30%概率降价观望
+            if (Math.random() < 0.7) {
+              // 愿意出更高价：在原价和最低卖价之间取较高值，再加一点
+              if (lowestSellPrice > originalPrice) {
+                // 卖方要价更高，需要提高买价
+                newPrice = Math.min(lowestSellPrice, originalPrice * 1.05); // 最多提高5%
+                newPrice = Number(Math.max(originalPrice, newPrice).toFixed(3));
+                shouldReorder = true;
+                orderLogger.log(`📈 ${playerName} 买单撤单后提高价格: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+              } else {
+                // 卖方要价更低，可以降低买价
+                newPrice = Number((lowestSellPrice * 0.98).toFixed(3)); // 比最低卖价低2%
+                newPrice = Math.max(newPrice, currentPrice * 0.9); // 不低于现价90%
+                shouldReorder = true;
+                orderLogger.log(`📉 ${playerName} 买单撤单后降低价格: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+              }
+            } else {
+              // 选择降价观望
+              newPrice = Number((originalPrice * 0.95).toFixed(3)); // 降价5%
+              shouldReorder = true;
+              orderLogger.log(`📉 ${playerName} 买单撤单后观望降价: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+            }
+          } else {
+            // 卖单撤单后，观察买单
+            const highestBuyPrice = orders.buy.length > 0 
+              ? Math.max(...orders.buy.map(o => Number(o.price)))
+              : currentPrice;
+            
+            // 70%概率愿意降价出货，30%概率提价观望
+            if (Math.random() < 0.7) {
+              // 愿意降价出货：在原价和最高买价之间取较低值，再减一点
+              if (highestBuyPrice < originalPrice) {
+                // 买方出价更低，需要降低卖价
+                newPrice = Math.max(highestBuyPrice, originalPrice * 0.95); // 最多降低5%
+                newPrice = Number(Math.min(originalPrice, newPrice).toFixed(3));
+                shouldReorder = true;
+                orderLogger.log(`📉 ${playerName} 卖单撤单后降低价格: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+              } else {
+                // 买方出价更高，可以提高卖价
+                newPrice = Number((highestBuyPrice * 1.02).toFixed(3)); // 比最高买价高2%
+                newPrice = Math.min(newPrice, currentPrice * 1.1); // 不高于现价110%
+                shouldReorder = true;
+                orderLogger.log(`📈 ${playerName} 卖单撤单后提高价格: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+              }
+            } else {
+              // 选择提价观望
+              newPrice = Number((originalPrice * 1.05).toFixed(3)); // 提价5%
+              shouldReorder = true;
+              orderLogger.log(`📈 ${playerName} 卖单撤单后观望提价: ¥${originalPrice.toFixed(3)} → ¥${newPrice.toFixed(3)}`);
+            }
+          }
+          
+          if (shouldReorder) {
+            // 获取返还后的资产
+            const refunds = playerRefunds[playerKey] || { money: 0, shares: 0 };
+            const availableMoney = (player.money || 0) + refunds.money;
+            const availableShares = (player.shares || 0) + refunds.shares;
+            
+            // 计算新的下单数量（可能调整）
+            let newShares = originalShares;
+            
+            if (orderType === 'buy' && availableMoney >= newPrice * newShares) {
+              // 生成新买单
+              const orderCode = generateOrderCode(playerKey, 'buy');
+              const frozenMoney = newPrice * newShares;
+              newOrdersAfterCancel.buy.push({
+                id: orderCode,
+                code: orderCode,
+                player: playerName,
+                price: newPrice,
+                shares: newShares,
+                type: 'buy',
+                frozenMoney: frozenMoney,
+                playerKey: playerKey
+              });
+              
+              if (!playerUpdatesAfterCancel[playerKey]) {
+                playerUpdatesAfterCancel[playerKey] = { 
+                  money: availableMoney, 
+                  shares: availableShares,
+                  frozenMoney: player.frozenMoney || 0,
+                  frozenShares: player.frozenShares || 0
+                };
+              }
+              playerUpdatesAfterCancel[playerKey].money -= frozenMoney;
+              playerUpdatesAfterCancel[playerKey].frozenMoney += frozenMoney;
+              
+              orderLogger.log(`✅ ${playerName} 撤单后重新下买单: ¥${newPrice.toFixed(3)} × ${newShares}股`);
+            } else if (orderType === 'sell' && availableShares >= newShares) {
+              // 生成新卖单
+              const orderCode = generateOrderCode(playerKey, 'sell');
+              newOrdersAfterCancel.sell.push({
+                id: orderCode,
+                code: orderCode,
+                player: playerName,
+                price: newPrice,
+                shares: newShares,
+                type: 'sell',
+                frozenShares: newShares,
+                playerKey: playerKey
+              });
+              
+              if (!playerUpdatesAfterCancel[playerKey]) {
+                playerUpdatesAfterCancel[playerKey] = { 
+                  money: availableMoney, 
+                  shares: availableShares,
+                  frozenMoney: player.frozenMoney || 0,
+                  frozenShares: player.frozenShares || 0
+                };
+              }
+              playerUpdatesAfterCancel[playerKey].shares -= newShares;
+              playerUpdatesAfterCancel[playerKey].frozenShares += newShares;
+              
+              orderLogger.log(`✅ ${playerName} 撤单后重新下卖单: ¥${newPrice.toFixed(3)} × ${newShares}股`);
+            }
+          }
+        });
+        
+        // 更新玩家资产（冻结资源）
+        if (Object.keys(playerUpdatesAfterCancel).length > 0) {
+          setPlayers(prev => {
+            const updated = { ...prev };
+            Object.entries(playerUpdatesAfterCancel).forEach(([key, updates]) => {
+              if (updated[key]) {
+                updated[key] = { ...updated[key], ...updates };
+              }
+            });
+            return updated;
+          });
+        }
+        
+        // 添加新订单
+        if (newOrdersAfterCancel.buy.length > 0 || newOrdersAfterCancel.sell.length > 0) {
+          setOrders(prev => ({
+            buy: [...prev.buy, ...newOrdersAfterCancel.buy],
+            sell: [...prev.sell, ...newOrdersAfterCancel.sell]
+          }));
+          
+          // 初始化新订单的计数器
+          setOrderCounters(prev => {
+            const updated = { ...prev };
+            [...newOrdersAfterCancel.buy, ...newOrdersAfterCancel.sell].forEach(order => {
+              updated[order.id] = 0;
+            });
+            return updated;
+          });
+        }
+      }
     }
-  }, [orderCounters, setOrders, setOrderCounters, orders, players, setPlayers, isPaused]);
+  }, [orderCounters, setOrders, setOrderCounters, orders, players, setPlayers, isPaused, animalStatus, currentPrice, userPlayer, setUserPlayer]);
 
   // 【新增】每月资产核查机制 - 检查并修复异常冻结、坏账等问题
   const monthlyAssetAudit = useCallback(() => {
     if (isPaused || !players) return;
     
-    console.log(`🔍 开始每月资产核查...`);
+    checkLogger.debug(`🔍 开始每月资产核查...`);
     
     // 【新增】计算总股份守恒性检查
     // 初始动物总股份: 猫500 + 狗2000 + 熊5000 + 狐5000 + 虎10000 + 兔3000 + 牛100000 = 125500
@@ -866,19 +1101,15 @@ export const usePriceFluctuation = (gameState) => {
       totalShares += shares;
       totalFrozenShares += frozen;
       totalActualShares += shares + frozen;
-      console.log(`  📊 ${player.name}: 持股${shares} + 冻结${frozen} = ${shares + frozen}`);
+      checkLogger.debug(`  📊 ${player.name}: 持股${shares} + 冻结${frozen} = ${shares + frozen}`);
     });
     
-    console.log(`\n📈 总股份统计:`);
-    console.log(`  持股总计: ${totalShares}`);
-    console.log(`  冻结总计: ${totalFrozenShares}`);
-    console.log(`  实际总计: ${totalActualShares}`);
-    console.log(`  预期总计: ${expectedTotalShares} (初始动物${initialAnimalShares} + 用户初始${userInitialShares})`);
+    checkLogger.debug(`📈 总股份统计: 持股${totalShares}, 冻结${totalFrozenShares}, 实际${totalActualShares}`);
     
     if (totalActualShares !== expectedTotalShares) {
-      console.error(`⚠️ 总股份异常！预期${expectedTotalShares}，实际${totalActualShares}，差异${totalActualShares - expectedTotalShares}`);
+      checkLogger.warn(`⚠️ 总股份异常！预期${expectedTotalShares}，实际${totalActualShares}，差异${totalActualShares - expectedTotalShares}`);
     } else {
-      console.log(`✅ 总股份守恒检查通过`);
+      checkLogger.debug(`✅ 总股份守恒检查通过`);
     }
     
     // 计算所有订单中应该冻结的资金和股份（根据订单剩余数量）
@@ -892,7 +1123,7 @@ export const usePriceFluctuation = (gameState) => {
         // 买单冻结资金 = 剩余数量 × 委托价格
         const shouldFreezeMoney = order.shares * order.price;
         frozenByOrders[playerKey].money += shouldFreezeMoney;
-        console.log(`  📋 买单 ${order.player}: 剩余${order.shares}股 × ¥${order.price} = 应冻结¥${shouldFreezeMoney.toFixed(2)}`);
+        checkLogger.debug(`  📋 买单 ${order.player}: 剩余${order.shares}股 × ¥${order.price} = 应冻结¥${shouldFreezeMoney.toFixed(2)}`);
       }
     });
     
@@ -903,7 +1134,7 @@ export const usePriceFluctuation = (gameState) => {
         if (!frozenByOrders[playerKey]) frozenByOrders[playerKey] = { money: 0, shares: 0 };
         // 卖单冻结股份 = 剩余数量
         frozenByOrders[playerKey].shares += order.shares;
-        console.log(`  📋 卖单 ${order.player}: 剩余${order.shares}股应冻结`);
+        checkLogger.debug(`  📋 卖单 ${order.player}: 剩余${order.shares}股应冻结`);
       }
     });
     
@@ -923,10 +1154,7 @@ export const usePriceFluctuation = (gameState) => {
       let fixedFrozenMoney = actualFrozenMoney;
       let fixedFrozenShares = actualFrozenShares;
       
-      console.log(`\n👤 ${player.name} (${key}):`);
-      console.log(`  当前资金: ¥${player.money.toFixed(2)}, 冻结资金: ¥${actualFrozenMoney.toFixed(2)}`);
-      console.log(`  当前股份: ${player.shares}, 冻结股份: ${actualFrozenShares}`);
-      console.log(`  应冻结资金: ¥${expectedFrozen.money.toFixed(2)}, 应冻结股份: ${expectedFrozen.shares}`);
+      checkLogger.debug(`👤 ${player.name} (${key}): 资金¥${player.money.toFixed(0)}, 冻结¥${actualFrozenMoney.toFixed(0)}, 股份${player.shares}, 冻结股份${actualFrozenShares}`);
       
       // 检查1：冻结资金与订单不一致
       if (Math.abs(actualFrozenMoney - expectedFrozen.money) > 0.01) {
@@ -998,7 +1226,7 @@ export const usePriceFluctuation = (gameState) => {
     
     // 应用修复
     if (Object.keys(playerFixes).length > 0) {
-      console.log(`\n🔧 发现 ${Object.keys(playerFixes).length} 个玩家需要修复:`);
+      checkLogger.debug(`🔧 发现 ${Object.keys(playerFixes).length} 个玩家需要修复`);
       
       setPlayers(prev => {
         const updated = { ...prev };
@@ -1011,7 +1239,7 @@ export const usePriceFluctuation = (gameState) => {
               frozenMoney: fix.after.frozenMoney,
               frozenShares: fix.after.frozenShares
             };
-            console.log(`  ✅ ${fix.name}: ${fix.issues.join(', ')}`);
+            checkLogger.debug(`  ✅ ${fix.name}: ${fix.issues.join(', ')}`);
           }
         });
         return updated;
@@ -1028,7 +1256,7 @@ export const usePriceFluctuation = (gameState) => {
         }));
       }
     } else {
-      console.log(`\n✅ 资产核查完成，所有玩家资产正常`);
+      checkLogger.debug(`✅ 资产核查完成`);
     }
     
     return playerFixes;
@@ -1066,7 +1294,7 @@ export const usePriceFluctuation = (gameState) => {
         year: gameTime.getFullYear(),
         month: gameTime.getMonth()
       });
-      console.log(`🎮 游戏开始于: ${gameTime.getFullYear()}年${gameTime.getMonth() + 1}月`);
+      lifecycleLogger.log(`🎮 游戏开始于: ${gameTime.getFullYear()}年${gameTime.getMonth() + 1}月`);
     }
   }, [gameStarted, gameTime, setGameStartMonth, gameStartMonth]);
 
@@ -1082,7 +1310,7 @@ export const usePriceFluctuation = (gameState) => {
     // 记录今天已处理
     lastProcessedDateRef.current = currentDate;
     
-    console.log(`📅 ${currentDate} - 开始每日撮合流程`);
+    tradeLogger.debug(`📅 ${currentDate} - 开始每日撮合流程`);
     
     // 每天的执行顺序：
     // 0. 【新增】处理动物状态变化（冬眠、离开、加入）
@@ -1114,7 +1342,7 @@ export const usePriceFluctuation = (gameState) => {
       // 检查是否已经记录了今天的价格（通过日期计算）
       const expectedLength = Math.floor((gameTime - new Date(2000, 2, 1)) / (1000 * 60 * 60 * 24)) + 1;
       if (prev.length < expectedLength) {
-        console.log(`📊 补充价格记录: 当前进度${prev.length}, 期望${expectedLength}, 当前价格¥${currentPrice.toFixed(3)}`);
+        tradeLogger.debug(`📊 补充价格记录: 当前进度${prev.length}, 期望${expectedLength}`);
         return [...prev, currentPrice];
       }
       return prev;
@@ -1169,13 +1397,13 @@ export const usePriceFluctuation = (gameState) => {
       
       // 【新增】每月初更新月初价格为当前价格
       if (lastMonthRef.current && lastMonthRef.current !== monthKey && setMonthStartPrice) {
-        console.log(`📆 新月份 ${currentYear}年${currentMonth + 1}月开始，更新月初价格: ¥${currentPrice.toFixed(3)}`);
+        tradeLogger.log(`📆 新月份 ${currentYear}年${currentMonth + 1}月开始，月初价格: ¥${currentPrice.toFixed(3)}`);
         setMonthStartPrice(currentPrice);
       }
       
       // 每月初执行资产核查
       if (gameStarted && lastMonthRef.current && lastMonthRef.current !== monthKey) {
-        console.log(`📆 新月份 ${currentYear}年${currentMonth + 1}月开始，执行资产核查`);
+        checkLogger.log(`📆 新月份 ${currentYear}年${currentMonth + 1}月，执行资产核查`);
         monthlyAssetAudit();
       }
     }
@@ -1218,7 +1446,7 @@ export const usePriceFluctuation = (gameState) => {
             shares: 0,
             time: new Date().toLocaleTimeString()
           });
-          console.log(`🐻 ${player.name} 开始冬眠`);
+          lifecycleLogger.log(`🐻 ${player.name} 开始冬眠`);
         } else if (!isHibernationMonth && currentStatus === ANIMAL_STATUS.HIBERNATING) {
           // 从冬眠中醒来
           newStatus[key] = {
@@ -1236,7 +1464,7 @@ export const usePriceFluctuation = (gameState) => {
             shares: 0,
             time: new Date().toLocaleTimeString()
           });
-          console.log(`🐻 ${player.name} 从冬眠中醒来`);
+          lifecycleLogger.log(`🐻 ${player.name} 从冬眠中醒来`);
         }
       }
     });
@@ -1247,10 +1475,15 @@ export const usePriceFluctuation = (gameState) => {
       
       const currentStatus = animalStatus[key]?.status || ANIMAL_STATUS.ACTIVE;
       if (currentStatus === ANIMAL_STATUS.HIBERNATING) return; // 冬眠中跳过
+      if (currentStatus === ANIMAL_STATUS.LEFT) return; // 已离开跳过
       if (workingPlayers && workingPlayers[key]) return; // 已在打工中
       
-      // 资金不足100元，必须打工
-      if (player.money < ANIMAL_LIFECYCLE_CONFIG.leaveConditions.minMoney) {
+      // 考虑冻结资金来判断是否需要打工
+      const totalMoney = (player.money || 0) + (player.frozenMoney || 0);
+      const totalShares = (player.shares || 0) + (player.frozenShares || 0);
+      
+      // 资金不足100元且没有股票，必须打工
+      if (totalMoney < ANIMAL_LIFECYCLE_CONFIG.leaveConditions.minMoney && totalShares === 0) {
         // 【修改】随机选择5-15天打工时长
         const durationDays = Math.floor(Math.random() * 11) + 5; // 5-15天
         const salary = Math.floor(calculateWorkSalary(key, durationDays));
@@ -1287,64 +1520,281 @@ export const usePriceFluctuation = (gameState) => {
           shares: 0,
           time: new Date().toLocaleTimeString()
         });
-        console.log(`💼 ${player.name} 资金不足，强制打工${durationDays}天`);
+        lifecycleLogger.log(`💼 ${player.name} 资金不足，强制打工${durationDays}天`);
       }
     });
 
-    // 3. 检查是否有新动物加入
-    if (gameStartMonth) {
-      const monthsSinceStart = (gameTime.getFullYear() - gameStartMonth.year) * 12 + 
-                               (gameTime.getMonth() - gameStartMonth.month);
+    // 2.5 检查动物是否要离开/重新加入市场
+    Object.entries(players).forEach(([key, player]) => {
+      if (key === 'user') return; // 跳过用户
       
-      if (monthsSinceStart >= ANIMAL_LIFECYCLE_CONFIG.joinConditions.minMonthsBeforeJoin) {
-        const activePlayerCount = Object.keys(players).filter(
-          k => k !== 'user' && animalStatus[k]?.status !== ANIMAL_STATUS.LEFT
-        ).length;
+      const currentStatus = animalStatus[key]?.status || ANIMAL_STATUS.ACTIVE;
+      // 考虑冻结资产计算总价值
+      const frozenMoney = player.frozenMoney || 0;
+      const frozenShares = player.frozenShares || 0;
+      const totalValue = (player.money || 0) + frozenMoney + 
+                         ((player.shares || 0) + frozenShares) * currentPrice;
+      const initialValue = (player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0);
+      const profitRate = initialValue > 0 ? (totalValue - initialValue) / initialValue : 0;
+      
+      // 已离开的动物有概率重新加入
+      if (currentStatus === ANIMAL_STATUS.LEFT) {
+        // 亏损超过50%且离开超过30天，有30%概率重新加入
+        const leftSince = new Date(animalStatus[key]?.since || gameTime);
+        const daysSinceLeft = Math.floor((gameTime - leftSince) / (1000 * 60 * 60 * 24));
         
-        if (activePlayerCount < ANIMAL_LIFECYCLE_CONFIG.joinConditions.maxPlayers &&
-            Math.random() < ANIMAL_LIFECYCLE_CONFIG.joinConditions.joinProbability) {
+        if (daysSinceLeft >= 30 && Math.random() < 0.3) {
+          // 重新加入市场，给予初始资金
+          const initialMoney = player.initialMoney * 0.5; // 给予初始资金的一半
+          const initialShares = player.initialShares * 0.3; // 给予初始股份的30%
           
-          const existingKeys = Object.keys(players);
-          const newAnimal = getRandomNewAnimal(existingKeys);
-          
-          if (newAnimal) {
-            // 添加新动物
-            const newPlayerData = {
-              name: newAnimal.name,
-              money: newAnimal.template.money,
-              shares: newAnimal.template.shares,
-              icon: newAnimal.template.icon,
-              emotion: 'neutral',
-              initialMoney: newAnimal.template.money,
-              initialShares: newAnimal.template.shares,
+          setPlayers(prev => ({
+            ...prev,
+            [key]: {
+              ...prev[key],
+              money: initialMoney,
+              shares: initialShares,
+              initialMoney: initialMoney,
+              initialShares: initialShares,
               initialPrice: currentPrice
-            };
-            
-            setPlayers(prev => ({
-              ...prev,
-              [newAnimal.key]: newPlayerData
-            }));
-            
-            newStatus[newAnimal.key] = {
-              status: ANIMAL_STATUS.ACTIVE,
-              since: gameTime.toISOString(),
-              reason: '新加入游戏'
-            };
-            
-            announcements.push(`🎉 【新玩家加入】${newAnimal.name}: ${newAnimal.template.description}`);
-            newTransactions.push({
-              id: Date.now() + Math.random(),
-              type: '新玩家加入',
-              player: newAnimal.name,
-              action: `加入游戏，初始资金¥${newAnimal.template.money}`,
-              price: currentPrice,
-              shares: newAnimal.template.shares,
-              time: new Date().toLocaleTimeString()
-            });
-            console.log(`🎉 新动物加入: ${newAnimal.name}`);
-          }
+            }
+          }));
+          
+          newStatus[key] = {
+            status: ANIMAL_STATUS.ACTIVE,
+            since: gameTime.toISOString(),
+            reason: '重新加入市场'
+          };
+          
+          // 公司收回股份
+          setDreamCompany(prev => ({
+            ...prev,
+            shares: prev.shares - initialShares
+          }));
+          
+          const rejoinMsg = getRejoinMessage(key);
+          announcements.push(`🎉 【重返市场】${player.name}: ${rejoinMsg}`);
+          newTransactions.push({
+            id: Date.now() + Math.random(),
+            type: '重返市场',
+            player: player.name,
+            action: `重新加入市场，资金¥${initialMoney.toFixed(0)}`,
+            price: currentPrice,
+            shares: initialShares,
+            time: new Date().toLocaleTimeString()
+          });
+          lifecycleLogger.log(`🎉 ${player.name} 重新加入市场`);
         }
+        return; // 跳过已离开的动物后续检查
       }
+      
+      // 冬眠中或打工中不检查离开条件
+      if (currentStatus === ANIMAL_STATUS.HIBERNATING || currentStatus === ANIMAL_STATUS.WORKING) return;
+      
+      // 检查离开条件：亏损超过70%且资金严重不足
+      const leaveTotalMoney = (player.money || 0) + (player.frozenMoney || 0);
+      const leaveInitialMoney = player.initialMoney || 1;
+      if (profitRate < -0.7 && leaveTotalMoney < leaveInitialMoney * 0.2) {
+        // 动物决定离开市场
+        const frozenSharesToSell = player.frozenShares || 0;
+        const sharesToSell = player.shares + frozenSharesToSell; // 包括冻结股份
+        const sellPrice = currentPrice * 0.95; // 低于现价5%卖给公司
+        const revenue = sharesToSell * sellPrice;
+        
+        // 保存原始初始值用于重新加入
+        const originalInitialMoney = player.initialMoney || player.money;
+        const originalInitialShares = player.initialShares || 0;
+        
+        // 更新玩家状态
+        setPlayers(prev => ({
+          ...prev,
+          [key]: {
+            ...prev[key],
+            money: prev[key].money + revenue,
+            shares: 0,
+            frozenShares: 0,
+            // 保留原始初始值用于重新加入
+            initialMoney: originalInitialMoney,
+            initialShares: originalInitialShares
+          }
+        }));
+        
+        // 公司回收股份
+        setDreamCompany(prev => ({
+          ...prev,
+          shares: prev.shares + sharesToSell,
+          money: prev.money - revenue
+        }));
+        
+        newStatus[key] = {
+          status: ANIMAL_STATUS.LEFT,
+          since: gameTime.toISOString(),
+          reason: `亏损严重(${(profitRate * 100).toFixed(1)}%)，退出市场`
+        };
+        
+        const leaveMsg = getLeaveMessage(key);
+        announcements.push(`🚪 【离开市场】${player.name}: ${leaveMsg} (亏损${(profitRate * 100).toFixed(1)}%)`);
+        newTransactions.push({
+          id: Date.now() + Math.random(),
+          type: '离开市场',
+          player: player.name,
+          action: `卖出${sharesToSell}股给公司，退出市场`,
+          price: sellPrice,
+          shares: sharesToSell,
+          time: new Date().toLocaleTimeString()
+        });
+        lifecycleLogger.log(`🚪 ${player.name} 离开市场，卖出${sharesToSell}股@¥${sellPrice.toFixed(3)}`);
+      }
+    });
+
+    // 3. 季度变更时的动物状态变化
+    // 只在季节变化月份的1日检查（3月1日、6月1日、9月1日、12月1日）
+    const seasonMonth = gameTime.getMonth();
+    const seasonDay = gameTime.getDate();
+    const isSeasonChangeMonth = [2, 5, 8, 11].includes(seasonMonth); // 3月、6月、9月、12月
+    const isFirstDayOfMonth = seasonDay === 1;
+    
+    // 获取当前季节
+    let currentSeason = 'spring';
+    if (seasonMonth >= 2 && seasonMonth <= 4) currentSeason = 'spring';
+    else if (seasonMonth >= 5 && seasonMonth <= 7) currentSeason = 'summer';
+    else if (seasonMonth >= 8 && seasonMonth <= 10) currentSeason = 'autumn';
+    else currentSeason = 'winter';
+    
+    if (isSeasonChangeMonth && isFirstDayOfMonth && gameStartMonth) {
+      // 3.1 季节变更时，活跃动物可能离开
+      const activeAnimals = Object.entries(players).filter(([key, player]) => {
+        if (key === 'user') return false;
+        const status = animalStatus[key]?.status || ANIMAL_STATUS.ACTIVE;
+        return status === ANIMAL_STATUS.ACTIVE;
+      });
+      
+      // 获取季节修正系数
+      const seasonModifier = ANIMAL_LIFECYCLE_CONFIG.quarterlyConfig.leaveProbability.seasonModifiers[currentSeason] || 1.0;
+      
+      activeAnimals.forEach(([key, player]) => {
+        // 计算离开概率
+        const frozenMoney = player.frozenMoney || 0;
+        const frozenShares = player.frozenShares || 0;
+        const totalValue = (player.money || 0) + frozenMoney + 
+                           ((player.shares || 0) + frozenShares) * currentPrice;
+        const initialValue = (player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0);
+        const profitRate = initialValue > 0 ? (totalValue - initialValue) / initialValue : 0;
+        
+        let leaveProbability = ANIMAL_LIFECYCLE_CONFIG.quarterlyConfig.leaveProbability.base;
+        
+        // 资金不足时增加离开概率
+        if (player.money < player.initialMoney * 0.5) {
+          leaveProbability += ANIMAL_LIFECYCLE_CONFIG.quarterlyConfig.leaveProbability.lowMoney;
+        }
+        
+        // 亏损时增加离开概率
+        if (profitRate < -0.3) {
+          leaveProbability += 0.2; // 亏损30%以上，额外增加20%概率
+        } else if (profitRate < -0.1) {
+          leaveProbability += 0.1; // 亏损10%-30%，额外增加10%概率
+        }
+        
+        // 应用季节修正
+        leaveProbability *= seasonModifier;
+        
+        // 限制概率范围
+        leaveProbability = Math.min(0.6, Math.max(0.05, leaveProbability));
+        
+        // 随机决定是否离开
+        if (Math.random() < leaveProbability) {
+          // 动物决定离开市场
+          const sharesToSell = player.shares + (player.frozenShares || 0);
+          const sellPrice = currentPrice * 0.95;
+          const revenue = sharesToSell * sellPrice;
+          
+          // 更新玩家状态
+          setPlayers(prev => ({
+            ...prev,
+            [key]: {
+              ...prev[key],
+              money: prev[key].money + revenue,
+              shares: 0,
+              frozenShares: 0
+            }
+          }));
+          
+          // 公司回收股份
+          setDreamCompany(prev => ({
+            ...prev,
+            shares: prev.shares + sharesToSell,
+            money: prev.money - revenue
+          }));
+          
+          newStatus[key] = {
+            status: ANIMAL_STATUS.LEFT,
+            since: gameTime.toISOString(),
+            reason: `季节变化，暂别市场`
+          };
+          
+          const leaveMsg = getLeaveMessage(key);
+          announcements.push(`👋 【季节离开】${player.name}: ${leaveMsg} (${currentSeason === 'winter' ? '冬天太冷了' : currentSeason === 'autumn' ? '秋意渐浓' : '换个环境'})`);
+          newTransactions.push({
+            id: Date.now() + Math.random(),
+            type: '季节离开',
+            player: player.name,
+            action: `季节变更，卖出${sharesToSell}股，暂时离开`,
+            price: sellPrice,
+            shares: sharesToSell,
+            time: new Date().toLocaleTimeString()
+          });
+          lifecycleLogger.log(`👋 ${player.name} 季节变化离开市场，离开概率${(leaveProbability * 100).toFixed(1)}%`);
+        }
+      });
+      
+      // 3.2 已离开的动物有概率重新加入
+      const leftAnimals = Object.entries(players).filter(([key, player]) => {
+        if (key === 'user') return false;
+        return animalStatus[key]?.status === ANIMAL_STATUS.LEFT;
+      });
+      
+      // 每个已离开的动物有概率重新加入
+      leftAnimals.forEach(([key, player]) => {
+        // 使用配置的重新加入概率
+        const joinProbability = ANIMAL_LIFECYCLE_CONFIG.quarterlyConfig.joinProbability;
+        
+        if (Math.random() < joinProbability) {
+          // 重新加入市场，给予初始资金
+          const initialMoney = player.initialMoney || 5000;
+          const initialShares = 0; // 重新加入时不分配股份
+          
+          setPlayers(prev => ({
+            ...prev,
+            [key]: {
+              ...prev[key],
+              money: initialMoney,
+              shares: initialShares,
+              initialMoney: initialMoney,
+              initialShares: initialShares,
+              initialPrice: currentPrice
+            }
+          }));
+          
+          newStatus[key] = {
+            status: ANIMAL_STATUS.ACTIVE,
+            since: gameTime.toISOString(),
+            reason: '季节变化，重返市场'
+          };
+          
+          const rejoinMsg = getRejoinMessage(key);
+          announcements.push(`🎉 【重返市场】${player.name}: ${rejoinMsg}`);
+          newTransactions.push({
+            id: Date.now() + Math.random(),
+            type: '重返市场',
+            player: player.name,
+            action: `季节变化，重新加入市场，资金¥${initialMoney.toFixed(0)}`,
+            price: currentPrice,
+            shares: initialShares,
+            time: new Date().toLocaleTimeString()
+          });
+          lifecycleLogger.log(`🎉 ${player.name} 季节变化，重新加入市场`);
+        }
+      });
     }
 
     // 更新状态
@@ -1367,7 +1817,7 @@ export const usePriceFluctuation = (gameState) => {
     if (newTransactions.length > 0) {
       setTransactions(prev => [...prev, ...newTransactions]);
     }
-  }, [isPaused, gameTime, players, animalStatus, workingPlayers, gameStartMonth, currentPrice, setAnimalStatus, setWorkingPlayers, setPlayers, setChatMessages, setTransactions]);
+  }, [isPaused, gameTime, players, animalStatus, workingPlayers, gameStartMonth, currentPrice, setAnimalStatus, setWorkingPlayers, setPlayers, setChatMessages, setTransactions, setDreamCompany]);
 
   return null;
 };
@@ -1412,7 +1862,7 @@ const generateDailyChats = (players, setChatMessages, currentWeather) => {
   if (chatMsg && chatMsg.text) {
     const textKey = `${chatMsg.playerName}-${chatMsg.text}`;
     if (recentChatTexts.has(textKey)) {
-      console.log(`💬 跳过重复聊天: ${chatMsg.playerName} - ${chatMsg.text}`);
+      // console.log(`💬 跳过重复聊天: ${chatMsg.playerName} - ${chatMsg.text}`);
       return;
     }
     
@@ -1424,7 +1874,7 @@ const generateDailyChats = (players, setChatMessages, currentWeather) => {
       recentChatTexts.delete(firstItem);
     }
     
-    console.log(`💬 生成聊天消息: ${chatMsg.playerName} - ${chatMsg.text}`);
+    // console.log(`💬 生成聊天消息: ${chatMsg.playerName} - ${chatMsg.text}`);
     setChatMessages(prev => [...prev, chatMsg].slice(-50));
   }
 };

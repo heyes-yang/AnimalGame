@@ -25,6 +25,7 @@ const TradingPanel = ({
   const [showWorkModal, setShowWorkModal] = useState(false);
   const [customPrice, setCustomPrice] = useState(currentPrice.toFixed(3));
   const [customType, setCustomType] = useState('buy');
+  const [prevMonth, setPrevMonth] = useState(null); // 跟踪上一次的月份
 
   const limitUpPrice = monthStartPrice * 1.2;
   const limitDownPrice = monthStartPrice * 0.8;
@@ -79,9 +80,17 @@ const TradingPanel = ({
     }
   }, [workDuration]);
 
+  // 只在月份变化时更新默认价格，避免用户输入时被覆盖
   useEffect(() => {
-    setCustomPrice(currentPrice.toFixed(3));
-  }, [currentPrice]);
+    if (gameTime) {
+      const currentMonth = gameTime.getMonth();
+      if (prevMonth !== null && prevMonth !== currentMonth) {
+        // 月份变化，更新默认价格
+        setCustomPrice(currentPrice.toFixed(3));
+      }
+      setPrevMonth(currentMonth);
+    }
+  }, [gameTime, currentPrice, prevMonth]);
 
   const hideDialogue = () => {
     setTradeDialogue({ text: null, isVisible: false, animalIcon: null, emotionIcon: null });

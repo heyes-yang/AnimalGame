@@ -1,5 +1,5 @@
 // 动物模板配置 - 用于在游戏中动态加入新的动物玩家
-// 每个动物都有独特的属性、资金和股份配置
+// 每个动物都有独特的属性和资金配置（不分配股票，需要自己购买）
 
 export const ANIMAL_TEMPLATES = {
   // 现有动物模板（与 gameState 中的 INITIAL_PLAYERS 一致）
@@ -7,7 +7,7 @@ export const ANIMAL_TEMPLATES = {
     name: '散户猫',
     template: {
       money: 2000,
-      shares: 500,
+      shares: 0, // 不分配股票
       icon: '🐱',
       emotion: 'neutral',
       description: '谨慎的小散户，喜欢小额频繁交易，容易跟风和恐慌',
@@ -20,7 +20,7 @@ export const ANIMAL_TEMPLATES = {
     name: '中产狗',
     template: {
       money: 5000,
-      shares: 2000,
+      shares: 0, // 不分配股票
       icon: '🐶',
       emotion: 'neutral',
       description: '稳重的中产阶级，理性投资，不盲目跟风',
@@ -33,7 +33,7 @@ export const ANIMAL_TEMPLATES = {
     name: '大户熊',
     template: {
       money: 8000,
-      shares: 5000,
+      shares: 0, // 不分配股票
       icon: '🐻',
       emotion: 'neutral',
       description: '资金雄厚的大户，喜欢大额交易，有时会刻意压低价格',
@@ -46,7 +46,7 @@ export const ANIMAL_TEMPLATES = {
     name: '游资狐',
     template: {
       money: 10000,
-      shares: 5000,
+      shares: 0, // 不分配股票
       icon: '🦊',
       emotion: 'neutral',
       description: '聪明的投机者，快进快出，善于把握短期机会',
@@ -59,7 +59,7 @@ export const ANIMAL_TEMPLATES = {
     name: '庄家虎',
     template: {
       money: 50000,
-      shares: 10000,
+      shares: 0, // 不分配股票
       icon: '🐯',
       emotion: 'neutral',
       description: '市场的主导者，资金量最大，有能力影响价格走势',
@@ -72,7 +72,7 @@ export const ANIMAL_TEMPLATES = {
     name: '量化兔',
     template: {
       money: 20000,
-      shares: 3000,
+      shares: 0, // 不分配股票
       icon: '🐰',
       emotion: 'neutral',
       description: '量化交易高手，使用算法进行高频交易和套利',
@@ -85,21 +85,21 @@ export const ANIMAL_TEMPLATES = {
     name: '神秘牛',
     template: {
       money: 10000,
-      shares: 100000,
+      shares: 0, // 不分配股票
       icon: '🐮',
       emotion: 'neutral',
-      description: '神秘的大户，行为难以预测，持有大量股份，倾向于长期投资',
+      description: '神秘的大户，行为难以预测，倾向于长期投资',
       riskLevel: 'unknown',
       tradeStyle: '神秘型'
     }
   },
   
-  // 额外动物模板 - 可在游戏中动态加入
+  // 额外动物模板 - 游戏开始时就加入
   panda: {
     name: '懒熊猫',
     template: {
-      money: 15000,
-      shares: 3000,
+      money: 6000,
+      shares: 0, // 不分配股票
       icon: '🐼',
       emotion: 'neutral',
       description: '悠闲的投资者，交易频率低，喜欢长期持有',
@@ -111,8 +111,8 @@ export const ANIMAL_TEMPLATES = {
   lion: {
     name: '狮子王',
     template: {
-      money: 80000,
-      shares: 15000,
+      money: 30000,
+      shares: 0, // 不分配股票
       icon: '🦁',
       emotion: 'neutral',
       description: '市场王者，资金雄厚，喜欢掌控全局',
@@ -124,8 +124,8 @@ export const ANIMAL_TEMPLATES = {
   elephant: {
     name: '大象象',
     template: {
-      money: 100000,
-      shares: 20000,
+      money: 15000,
+      shares: 0, // 不分配股票
       icon: '🐘',
       emotion: 'neutral',
       description: '市场巨无霸，行动缓慢但影响巨大，长期持有者',
@@ -137,8 +137,8 @@ export const ANIMAL_TEMPLATES = {
   wolf: {
     name: '独狼哥',
     template: {
-      money: 30000,
-      shares: 4000,
+      money: 25000,
+      shares: 0, // 不分配股票
       icon: '🐺',
       emotion: 'neutral',
       description: '独行侠，喜欢独自操作，精准打击',
@@ -150,9 +150,9 @@ export const ANIMAL_TEMPLATES = {
   monkey: {
     name: '调皮猴',
     template: {
-      money: 5000,
-      shares: 1500,
-      icon: '🐵',
+      money: 8000,
+      shares: 0, // 不分配股票
+      icon: '🐒',
       emotion: 'neutral',
       description: '喜欢频繁交易，追求短期收益，灵活多变',
       riskLevel: 'medium',
@@ -163,8 +163,8 @@ export const ANIMAL_TEMPLATES = {
   owl: {
     name: '猫头鹰',
     template: {
-      money: 25000,
-      shares: 2500,
+      money: 12000,
+      shares: 0, // 不分配股票
       icon: '🦉',
       emotion: 'neutral',
       description: '夜间观察者，善于分析，冷静决策',
@@ -176,8 +176,8 @@ export const ANIMAL_TEMPLATES = {
   snake: {
     name: '青蛇妹',
     template: {
-      money: 12000,
-      shares: 2000,
+      money: 18000,
+      shares: 0, // 不分配股票
       icon: '🐍',
       emotion: 'neutral',
       description: '冷血投资者，耐心等待机会，一击必中',
@@ -189,8 +189,8 @@ export const ANIMAL_TEMPLATES = {
   pig: {
     name: '存钱猪',
     template: {
-      money: 3000,
-      shares: 3000,
+      money: 5000,
+      shares: 0, // 不分配股票
       icon: '🐷',
       emotion: 'neutral',
       description: '喜欢存钱，不喜欢冒险，稳定增长',

@@ -593,6 +593,84 @@ export const workChatMessages = {
   }
 };
 
+// 动物离开交易市场的消息
+export const leaveMarketMessages = {
+  cat: [
+    "喵... 我亏太多了，还是先离开吧...",
+    "喵呜~ 这个市场不适合我，再见啦大家~",
+    "呼噜... 心累了，我要去休息一段时间..."
+  ],
+  dog: [
+    "汪~ 经过慎重考虑，我决定暂时离开市场~",
+    "汪汪~ 投资有风险，我选择暂时退出~",
+    "汪~ 这段时间学到了很多，但现在是时候离开了~"
+  ],
+  bear: [
+    "吼~ 大户也有输的时候，我先撤了~",
+    "吼吼~ 暂时离开，等待更好的时机~",
+    "吼~ 市场无情，我先退出观望~"
+  ],
+  fox: [
+    "嘻嘻~ 投机失败，我要去找别的机会了~",
+    "嘿嘿~ 这里的钱不好赚，我去别处了~",
+    "嘻嘻~ 失败是成功之母，我先离开了~"
+  ],
+  tiger: [
+    "嗷~ 庄家也有退场的时候~",
+    "嗷嗷~ 暂时退出，但我会回来的~",
+    "嗷~ 市场变幻莫测，我先离开了~"
+  ],
+  rabbit: [
+    "蹦蹦~ 算法显示应该退出市场~",
+    "跳跳~ 模型判断当前不适合继续交易~",
+    "蹦蹦~ 量化分析结果：暂时退出~"
+  ],
+  cow: [
+    "哞~ ............离开............命运的安排............",
+    "哞哞~ ............退出............天机如此............",
+    "哞~ ............告别............一切皆有定数............"
+  ]
+};
+
+// 动物重新加入交易市场的消息
+export const rejoinMarketMessages = {
+  cat: [
+    "喵~ 我回来啦！准备重新开始~",
+    "喵喵~ 休息够了，我又来啦~",
+    "呼噜~ 新的机会，新的开始~"
+  ],
+  dog: [
+    "汪~ 我回来了，准备继续投资~",
+    "汪汪~ 重新加入市场，更有信心了~",
+    "汪~ 又是新的开始，加油~"
+  ],
+  bear: [
+    "吼~ 大户回归！~",
+    "吼吼~ 准备好重新开始交易了~",
+    "吼~ 回来了，这次要更谨慎~"
+  ],
+  fox: [
+    "嘻嘻~ 我又回来啦~",
+    "嘿嘿~ 新的机会在等着我~",
+    "嘻嘻~ 回归市场，继续投机~"
+  ],
+  tiger: [
+    "嗷~ 庄家回归~",
+    "嗷嗷~ 我回来了，市场准备好了吗~",
+    "嗷~ 重新开始，继续掌控~"
+  ],
+  rabbit: [
+    "蹦蹦~ 算法重启，重新加入~",
+    "跳跳~ 模型重新上线~",
+    "蹦蹦~ 回归交易，优化完成~"
+  ],
+  cow: [
+    "哞~ ............回归............命运召唤............",
+    "哞哞~ ............回来............天机所指............",
+    "哞~ ............重新开始............一切皆有定数............"
+  ]
+};
+
 // 获取动物下单时的聊天消息（用于聊天室）
 export const getAnimalChatMessage = (animalType, orderType, extraInfo = {}) => {
   const animalMessages = chatMessages[animalType] || chatMessages.cat;
@@ -718,4 +796,16 @@ export const generateRandomChatMessage = (players) => {
     default:
       return getDailyChatMessage(randomAnimal);
   }
+};
+
+// 获取动物离开市场的消息
+export const getLeaveMessage = (animalKey) => {
+  const messages = leaveMarketMessages[animalKey] || leaveMarketMessages.cat;
+  return messages[Math.floor(Math.random() * messages.length)];
+};
+
+// 获取动物重新加入市场的消息
+export const getRejoinMessage = (animalKey) => {
+  const messages = rejoinMarketMessages[animalKey] || rejoinMarketMessages.cat;
+  return messages[Math.floor(Math.random() * messages.length)];
 };

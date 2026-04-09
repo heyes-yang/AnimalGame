@@ -1,6 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { format } from 'date-fns';
+import { createLogger } from '../utils/logger';
+
+const chartLogger = createLogger('ui');
 
 const PriceChart = ({ priceHistory, currentPrice, startTime, dailyVolumes, gameTime }) => {
   // 【新增】图表类型状态：'daily' 为日线，'monthly' 为月K线
@@ -27,7 +30,7 @@ const PriceChart = ({ priceHistory, currentPrice, startTime, dailyVolumes, gameT
     // 计算起始日期（游戏开始日期）
     const startDate = new Date(baseDate);
     
-    console.log(`📊 月K线计算: priceHistory长度=${totalDays}, baseDate=${startDate.toLocaleDateString()}, gameTime=${currentDate.toLocaleDateString()}`);
+    chartLogger.debug(`📊 月K线计算: priceHistory长度=${totalDays}`);
     
     // 遍历每一天，按月分组
     let currentMonthData = null;
@@ -80,9 +83,9 @@ const PriceChart = ({ priceHistory, currentPrice, startTime, dailyVolumes, gameT
       monthlyData.push(currentMonthData);
     }
     
-    console.log(`📊 月K线生成完成: 共${monthlyData.length}个月数据`);
+    chartLogger.debug(`📊 月K线生成完成: 共${monthlyData.length}个月数据`);
     if (monthlyData.length > 0) {
-      console.log(`📊 第一个月: ${monthlyData[0].dateStr}, 最后一个月: ${monthlyData[monthlyData.length - 1].dateStr}`);
+      // chartLogger.debug(`📊 第一个月: ${monthlyData[0].dateStr}, 最后一个月: ${monthlyData[monthlyData.length - 1].dateStr}`);
     }
     
     // 只取最近60个月

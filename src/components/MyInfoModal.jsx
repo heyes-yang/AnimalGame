@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Wallet, TrendingUp, TrendingDown, Clock, BarChart3, DollarSign, Percent } from 'lucide-react';
+import { X, Wallet, TrendingUp, TrendingDown, Clock, BarChart3, DollarSign, Percent, Briefcase } from 'lucide-react';
 
 const MyInfoModal = ({ isOpen, onClose, userPlayer, currentPrice }) => {
   if (!isOpen || !userPlayer) return null;
@@ -23,6 +23,9 @@ const MyInfoModal = ({ isOpen, onClose, userPlayer, currentPrice }) => {
   const avgBuyPrice = userPlayer.avgBuyPrice || currentPrice;
   const stockProfit = userPlayer.shares * (currentPrice - avgBuyPrice);
   const stockProfitRate = avgBuyPrice > 0 ? (stockProfit / (avgBuyPrice * userPlayer.shares) * 100) : 0;
+  
+  // 累计打工收入
+  const totalWorkIncome = userPlayer.totalWorkIncome || 0;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -145,6 +148,20 @@ const MyInfoModal = ({ isOpen, onClose, userPlayer, currentPrice }) => {
               </div>
             </div>
           </div>
+
+          {/* 打工收入 */}
+          {totalWorkIncome > 0 && (
+            <div className="bg-orange-50 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Briefcase className="h-4 w-4 text-orange-500" />
+                <span className="text-sm font-medium text-gray-700">打工收入</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">累计打工收入</span>
+                <span className="font-bold text-orange-600">¥{totalWorkIncome.toFixed(0)}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 底部 */}

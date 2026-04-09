@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { gameLogger } from '../utils/logger';
 
 export const useGameActions = (gameState) => {
   const {
@@ -28,7 +29,7 @@ export const useGameActions = (gameState) => {
       currentPrice: currentPrice
     };
     
-    console.log(`🎮 新玩家加入: ${newPlayer.name}, 初始资金¥${newPlayer.money}, 初始股份${newPlayer.shares}`);
+    gameLogger.log(`🎮 新玩家加入: ${newPlayer.name}, 初始资金¥${newPlayer.money}, 初始股份${newPlayer.shares}`);
     
     setUserPlayer(newPlayer);
     

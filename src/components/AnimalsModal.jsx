@@ -4,10 +4,14 @@ import { X, Trophy, TrendingUp, TrendingDown, Briefcase, Coins } from 'lucide-re
 const AnimalsModal = ({ isOpen, onClose, players, currentPrice, userPlayer }) => {
   if (!isOpen || !players) return null;
 
-  // 计算玩家总市值并排序
+  // 计算玩家总市值并排序（考虑冻结资产）
   const playerList = Object.entries(players)
     .map(([key, player]) => {
-      const totalValue = (player.money || 0) + (player.shares || 0) * currentPrice;
+      // 计算总价值时包含冻结资产
+      const frozenMoney = player.frozenMoney || 0;
+      const frozenShares = player.frozenShares || 0;
+      const totalValue = (player.money || 0) + frozenMoney + 
+                         ((player.shares || 0) + frozenShares) * currentPrice;
       const isUser = userPlayer && userPlayer.name === player.name;
       return {
         key,
@@ -55,9 +59,11 @@ const AnimalsModal = ({ isOpen, onClose, players, currentPrice, userPlayer }) =>
         <div className="p-3 space-y-2">
           {playerList.map((player, index) => {
             const rank = index + 1;
-            const profit = player.totalValue - ((player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0));
-            const profitRate = ((player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0)) > 0 
-              ? (profit / ((player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0)) * 100) 
+            // 计算盈亏时使用 totalValue（已包含冻结资产）
+            const initialValue = (player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0);
+            const profit = player.totalValue - initialValue;
+            const profitRate = initialValue > 0 
+              ? (profit / initialValue * 100) 
               : 0;
             const workIncome = player.totalWorkIncome || 0;
 

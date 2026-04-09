@@ -8,8 +8,13 @@ const TransactionHistory = ({ transactions, chatMessages = [] }) => {
   const getTransactionIcon = (type) => {
     switch (type) {
       case '撮合成交': return <GitMerge className="h-3 w-3 text-blue-500" />;
-      case '买入': return <TrendingUp className="h-3 w-3 text-red-500" />;
-      case '卖出': return <TrendingDown className="h-3 w-3 text-green-500" />;
+      case '买入':
+      case '买入委托': return <TrendingUp className="h-3 w-3 text-red-500" />;
+      case '卖出':
+      case '卖出委托': return <TrendingDown className="h-3 w-3 text-green-500" />;
+      case '开始打工':
+      case '强制打工': return <span className="text-sm">💼</span>;
+      case '打工收入': return <span className="text-sm">💰</span>;
       default: return null;
     }
   };
@@ -17,8 +22,13 @@ const TransactionHistory = ({ transactions, chatMessages = [] }) => {
   const getTransactionColor = (type) => {
     switch (type) {
       case '撮合成交': return 'bg-blue-50 border-blue-200';
-      case '买入': return 'bg-red-50 border-red-200';
-      case '卖出': return 'bg-green-50 border-green-200';
+      case '买入':
+      case '买入委托': return 'bg-red-50 border-red-200';
+      case '卖出':
+      case '卖出委托': return 'bg-green-50 border-green-200';
+      case '开始打工':
+      case '强制打工': return 'bg-amber-50 border-amber-200';
+      case '打工收入': return 'bg-green-50 border-green-200';
       default: return 'bg-gray-50 border-gray-200';
     }
   };
@@ -65,34 +75,56 @@ const TransactionHistory = ({ transactions, chatMessages = [] }) => {
             className="overflow-y-auto space-y-1 scrollbar-hide"
             style={{ maxHeight: '320px' }}
           >
-            {recentTransactions.map((transaction) => (
-              <div
-                key={transaction.id}
-                className={`p-2 rounded border ${getTransactionColor(transaction.type)}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    {getTransactionIcon(transaction.type)}
-                    <div>
-                      <div className="font-medium text-gray-800 text-xs">
-                        {transaction.player || '玩家'}
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        {transaction.action} {transaction.shares}股 @ ¥{transaction.price}
+            {recentTransactions.map((transaction) => {
+              // 根据交易类型决定显示内容
+              const isWorkRelated = ['开始打工', '强制打工', '打工收入'].includes(transaction.type);
+              
+              return (
+                <div
+                  key={transaction.id}
+                  className={`p-2 rounded border ${getTransactionColor(transaction.type)}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {getTransactionIcon(transaction.type)}
+                      <div>
+                        <div className="font-medium text-gray-800 text-xs">
+                          {transaction.player || '玩家'}
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          {isWorkRelated ? (
+                            // 打工相关记录的显示格式
+                            <>
+                              {transaction.action}
+                              {transaction.price > 0 && (
+                                <span className="ml-1 text-green-600">薪资¥{transaction.price}</span>
+                              )}
+                            </>
+                          ) : (
+                            // 交易记录的显示格式
+                            <>
+                              {transaction.action} {transaction.shares}股 @ ¥{transaction.price}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-medium text-gray-800">
-                      ¥{(transaction.price * transaction.shares).toFixed(0)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {transaction.time}
+                    <div className="text-right">
+                      <div className="text-xs font-medium text-gray-800">
+                        {isWorkRelated ? (
+                          transaction.price > 0 ? `¥${transaction.price}` : '-'
+                        ) : (
+                          `¥${(transaction.price * transaction.shares).toFixed(0)}`
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {transaction.time}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center text-gray-500 py-4 text-xs">

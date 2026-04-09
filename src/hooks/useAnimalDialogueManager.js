@@ -11,8 +11,11 @@ export const useAnimalDialogueManager = (players, gameStarted, currentPrice, gam
   const calculateAnimalEmotion = useCallback((player) => {
     if (!player || typeof player.money !== 'number') return 'neutral';
 
-    // 当前总价值 = 当前资金 + 持股价值
-    const currentTotalValue = (player.money || 0) + (player.shares || 0) * currentPrice;
+    // 考虑冻结资产计算当前总价值
+    const frozenMoney = player.frozenMoney || 0;
+    const frozenShares = player.frozenShares || 0;
+    const currentTotalValue = (player.money || 0) + frozenMoney + 
+                               ((player.shares || 0) + frozenShares) * currentPrice;
     // 起始总价值 = 起始资金 + 起始持股价值
     const initialTotalValue = (player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0);
 

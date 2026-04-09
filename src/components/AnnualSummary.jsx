@@ -102,6 +102,64 @@ const calculateDonation = (profit) => {
   return Math.min(5000, Math.max(100, Math.floor(profit * 0.1)));
 };
 
+// 获取动物风险偏好等级
+const getRiskLevel = (animalKey) => {
+  const riskLevels = {
+    cat: 'low',      // 散户猫 - 保守
+    dog: 'medium',   // 中产狗 - 稳健
+    bear: 'medium',  // 大户熊 - 稳健
+    fox: 'high',     // 游资狐 - 激进
+    tiger: 'high',   // 庄家虎 - 激进
+    rabbit: 'medium',// 量化兔 - 稳健
+    cow: 'low',      // 神秘牛 - 保守
+    panda: 'low',    // 懒熊猫 - 保守
+    lion: 'high',    // 狮子王 - 激进
+    elephant: 'low', // 大象象 - 保守
+    wolf: 'high',    // 独狼哥 - 激进
+    monkey: 'medium',// 调皮猴 - 稳健
+    owl: 'medium',   // 猫头鹰 - 稳健
+    snake: 'high',   // 青蛇妹 - 激进
+    pig: 'low'       // 存钱猪 - 保守
+  };
+  return riskLevels[animalKey] || 'medium';
+};
+
+// 根据盈亏情况调整参与意愿
+const getParticipationRatio = (animalKey, profitRate) => {
+  const baseRatio = {
+    cat: 0.6,
+    dog: 0.7,
+    bear: 0.5,
+    fox: 0.85,
+    tiger: 0.8,
+    rabbit: 0.7,
+    cow: 0.3,
+    panda: 0.4,
+    lion: 0.75,
+    elephant: 0.5,
+    wolf: 0.8,
+    monkey: 0.65,
+    owl: 0.6,
+    snake: 0.75,
+    pig: 0.4
+  };
+  
+  let ratio = baseRatio[animalKey] || 0.6;
+  
+  // 盈利时更愿意参与，亏损时更谨慎
+  if (profitRate > 20) {
+    ratio *= 1.3; // 大幅盈利，更积极
+  } else if (profitRate > 0) {
+    ratio *= 1.1; // 盈利，略积极
+  } else if (profitRate > -20) {
+    ratio *= 0.9; // 小幅亏损，略保守
+  } else {
+    ratio *= 0.7; // 大幅亏损，保守
+  }
+  
+  return Math.min(0.95, Math.max(0.2, ratio)); // 限制在20%-95%之间
+};
+
 // 生成年度总结数据
 export const generateAnnualSummaryData = (year, players, priceHistory, currentPrice, userPlayer) => {
   const startPriceIndex = Math.max(0, priceHistory.length - 365);
@@ -110,10 +168,14 @@ export const generateAnnualSummaryData = (year, players, priceHistory, currentPr
   const priceChange = ((endPrice - startPrice) / startPrice * 100);
   
   const playerStats = Object.entries(players).map(([key, player]) => {
-    const totalValue = player.money + (player.shares * currentPrice);
-    const initialValue = player.initialMoney + (player.initialShares * player.initialPrice);
+    // 考虑冻结资产计算总价值
+    const frozenMoney = player.frozenMoney || 0;
+    const frozenShares = player.frozenShares || 0;
+    const totalValue = (player.money || 0) + frozenMoney + 
+                       ((player.shares || 0) + frozenShares) * currentPrice;
+    const initialValue = (player.initialMoney || 0) + (player.initialShares || 0) * (player.initialPrice || 1.0);
     const profit = totalValue - initialValue;
-    const profitRate = (profit / initialValue * 100);
+    const profitRate = initialValue > 0 ? (profit / initialValue * 100) : 0;
     
     return {
       key,
@@ -170,32 +232,42 @@ const AnnualSummary = ({
   const [selectedHistoryYear, setSelectedHistoryYear] = useState(null);
   
   // 公司交易状态
-  const [companyTradeDirection, setCompanyTradeDirection] = useState('buy'); // buy 或 sell
+  const [companyTradeDirection, setCompanyTradeDirection] = useState('sell'); // 只允许 sell（公司发行新股抛售）
   const [companyTradePrice, setCompanyTradePrice] = useState(0);
   const [companyTradeShares, setCompanyTradeShares] = useState(0);
   const [companyTradeParticipants, setCompanyTradeParticipants] = useState([]);
   const [companyTradeCompleted, setCompanyTradeCompleted] = useState(false);
+  const [userTradeAmount, setUserTradeAmount] = useState(0); // 玩家选择的交易数量
+  const [userWantsToTrade, setUserWantsToTrade] = useState(true); // 玩家是否愿意参与交易
+  const [tradeResult, setTradeResult] = useState(null); // 交易结果
+  const [tradeClosed, setTradeClosed] = useState(false); // 交易是否已关闭（不再显示操作界面）
+  
+  // 使用 ref 跟踪是否已经初始化过，避免重复初始化
+  const initializedRef = React.useRef(false);
   
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !initializedRef.current) {
       setCurrentSection(0);
       setCompanyTradeCompleted(false);
       setCompanyTradeParticipants([]);
+      setTradeResult(null);
+      setTradeClosed(false); // 重置交易关闭状态
       
-      // 初始化公司交易参数
+      // 初始化公司交易参数 - 公司只会抛售股份（发行新股）
       if (currentPrice && dreamCompany && !initialViewingHistory) {
-        // 随机决定买入或卖出
-        const direction = Math.random() > 0.5 ? 'buy' : 'sell';
+        const direction = 'sell'; // 只允许发行新股
         const price = calculateCompanyTradePrice(currentPrice, direction);
-        const maxShares = direction === 'buy' 
-          ? Math.min(50000, dreamCompany.shares) // 买入时，公司最多回购5万股
-          : 50000; // 卖出时，公司最多发行5万股
-        const shares = Math.floor(Math.random() * (maxShares - 5000) + 5000); // 5000-50000股
+        // 公司每次大会最多抛售50000股
+        const maxShares = Math.min(50000, dreamCompany.shares || 50000); // 不超过公司持有量和50000
+        const shares = Math.floor(Math.random() * 40000 + 10000); // 10000-50000股
+        const actualShares = Math.min(shares, maxShares);
         
         setCompanyTradeDirection(direction);
         setCompanyTradePrice(price);
-        setCompanyTradeShares(shares);
-        console.log(`🏛️ 年度大会公司交易: ${direction === 'buy' ? '回购' : '发行'} ${shares}股 @ ¥${price}`);
+        setCompanyTradeShares(actualShares);
+        setUserTradeAmount(0);
+        setUserWantsToTrade(true);
+        console.log(`🏛️ 年度大会公司交易: 发行 ${actualShares}股 @ ¥${price}`);
       }
       
       // 如果是外部传入的历史查看模式，设置为历史模式
@@ -206,6 +278,13 @@ const AnnualSummary = ({
         setViewingHistory(false);
         setSelectedHistoryYear(null);
       }
+      
+      initializedRef.current = true;
+    }
+    
+    // 当弹窗关闭时重置 initializedRef
+    if (!isOpen) {
+      initializedRef.current = false;
     }
   }, [isOpen, initialViewingHistory, historicalSummaries, currentPrice, dreamCompany]);
   
@@ -309,6 +388,12 @@ const AnnualSummary = ({
         );
         
       case 'companyTrade':
+        // 计算玩家可认购的最大股数
+        const userPlayerData = stats.playerStats?.find(p => p.isUser);
+        const userMaxAffordableShares = userPlayerData ? Math.floor(userPlayerData.money / companyTradePrice) : 0;
+        const userMaxShares = Math.min(10000, userMaxAffordableShares); // 最多10000股且不超过现金
+        const userCost = userTradeAmount * companyTradePrice;
+        
         return (
           <div className="space-y-3 animate-fade-in">
             <h2 className="text-base font-bold text-center text-gray-700">🏛️ 森林梦想公司交易</h2>
@@ -331,22 +416,22 @@ const AnnualSummary = ({
                 </div>
                 
                 <div className="bg-amber-50 rounded-lg p-2 border border-amber-200">
-                  <div className="text-xs text-amber-700 mb-1">📢 交易公告</div>
+                  <div className="text-xs text-amber-700 mb-1">📢 发行公告</div>
                   <p className="text-xs text-gray-700 leading-relaxed">
-                    {HOST_SPEECH.companyTrade(companyTradeDirection, companyTradeShares, companyTradePrice)}
+                    🦁 狮王致辞：森林梦想公司宣布将以 ¥{companyTradePrice.toFixed(3)} 的价格发行 {companyTradeShares.toLocaleString()} 股新股！所有居民都可以参与认购！
                   </p>
                 </div>
                 
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-blue-50 rounded-lg p-2 border border-blue-200 text-center">
-                    <div className="text-xs text-blue-600">交易价格</div>
+                    <div className="text-xs text-blue-600">发行价格</div>
                     <div className="text-lg font-bold text-blue-700">¥{companyTradePrice.toFixed(3)}</div>
                     <div className="text-xs text-gray-500">
                       {((companyTradePrice / currentPrice - 1) * 100).toFixed(2)}% {companyTradePrice >= currentPrice ? '溢价' : '折价'}
                     </div>
                   </div>
                   <div className="bg-purple-50 rounded-lg p-2 border border-purple-200 text-center">
-                    <div className="text-xs text-purple-600">交易数量</div>
+                    <div className="text-xs text-purple-600">发行数量</div>
                     <div className="text-lg font-bold text-purple-700">{companyTradeShares.toLocaleString()}股</div>
                     <div className="text-xs text-gray-500">
                       总额 ¥{(companyTradePrice * companyTradeShares).toLocaleString()}
@@ -356,65 +441,324 @@ const AnnualSummary = ({
                 
                 {!companyTradeCompleted ? (
                   <div className="bg-gray-50 rounded-lg p-2 border border-gray-200">
-                    <div className="text-xs text-gray-600 mb-2">📊 参与者交易意愿</div>
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {stats.playerStats?.filter(p => p.shares > 0 || (companyTradeDirection === 'sell' && p.money > 0)).map((player) => {
-                        // 根据交易方向决定参与逻辑
-                        const canParticipate = companyTradeDirection === 'buy' 
-                          ? player.shares > 0 // 回购：需要有股份
-                          : player.money > companyTradePrice * 100; // 发行：需要有足够资金买100股
+                    {/* 玩家交易区域 */}
+                    <div className="bg-yellow-50 rounded-lg p-2 border border-yellow-200 mb-2">
+                      <div className="text-xs text-yellow-700 mb-1 font-bold">🎮 你的认购选择</div>
+                      <div className="text-xs text-gray-600 mb-2">
+                        现金: ¥{(userPlayerData?.money || 0).toLocaleString()} | 
+                        最多可认购: {userMaxShares.toLocaleString()}股
+                      </div>
+                      
+                      {/* 是否参与交易 */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={userWantsToTrade}
+                            onChange={(e) => {
+                              setUserWantsToTrade(e.target.checked);
+                              if (!e.target.checked) setUserTradeAmount(0);
+                            }}
+                            className="w-4 h-4"
+                          />
+                          <span>参与认购</span>
+                        </label>
+                      </div>
+                      
+                      {/* 交易数量选择 */}
+                      {userWantsToTrade && userMaxShares > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-600">认购数量:</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max={userMaxShares}
+                              step="100"
+                              value={userTradeAmount}
+                              onChange={(e) => {
+                                // 确保100股整数倍
+                                const rawVal = parseInt(e.target.value) || 0;
+                                const val = Math.floor(rawVal / 100) * 100;
+                                setUserTradeAmount(Math.min(userMaxShares, Math.max(0, val)));
+                              }}
+                              className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs"
+                              placeholder="输入认购数量(100的整数倍)"
+                            />
+                            <button
+                              onClick={() => setUserTradeAmount(Math.floor(userMaxShares / 100) * 100)}
+                              className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
+                            >
+                              全部
+                            </button>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            需支付: ¥{(userCost).toLocaleString()} 
+                            {userCost > (userPlayerData?.money || 0) && <span className="text-red-500 ml-1">(资金不足!)</span>}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {userMaxShares === 0 && (
+                        <div className="text-xs text-red-500">现金不足，无法参与认购</div>
+                      )}
+                    </div>
+                    
+                    {/* 动物参与者 - 根据资金和持股情况决定认购意愿 */}
+                    <div className="text-xs text-gray-600 mb-2">📊 动物认购意愿</div>
+                    <div className="space-y-1 max-h-24 overflow-y-auto">
+                      {stats.playerStats?.filter(p => !p.isUser).map((player) => {
+                        // player.totalValue 已考虑冻结资产
+                        const totalValue = player.totalValue || (player.money + (player.shares * currentPrice));
+                        // 只有可用现金才能直接认购（不包括冻结资金）
+                        const maxAffordable = Math.floor(player.money / companyTradePrice);
                         
-                        const participantShares = companyTradeDirection === 'buy'
-                          ? Math.min(player.shares, Math.floor(companyTradeShares / stats.playerStats.length))
-                          : Math.floor(player.money / companyTradePrice);
+                        // 根据动物特征决定认购策略
+                        const riskLevel = getRiskLevel(player.key);
+                        const participationRatio = getParticipationRatio(player.key, player.profitRate);
+                        
+                        // 决定是否参与认购（基于资金情况和性格）
+                        let wantsToTrade = false;
+                        let desiredShares = 0;
+                        let needToSellShares = false;
+                        
+                        if (player.money >= companyTradePrice * 100) {
+                          // 有足够资金，根据性格决定认购
+                          wantsToTrade = Math.random() < participationRatio;
+                          if (wantsToTrade) {
+                            // 根据风险偏好决定认购比例
+                            const investRatio = riskLevel === 'high' ? 0.6 : riskLevel === 'medium' ? 0.4 : 0.2;
+                            const targetInvest = player.money * investRatio;
+                            desiredShares = Math.floor(targetInvest / companyTradePrice);
+                            desiredShares = Math.min(desiredShares, 10000, maxAffordable);
+                            desiredShares = Math.max(100, desiredShares); // 至少100股
+                          }
+                        } else if (player.shares > 0 && totalValue >= companyTradePrice * 100) {
+                          // 现金不足但有股票，可能卖股票来认购
+                          needToSellShares = true;
+                          wantsToTrade = Math.random() < participationRatio * 0.7; // 降低参与意愿
+                          if (wantsToTrade) {
+                            // 计算需要卖多少股票才能认购
+                            const investRatio = riskLevel === 'high' ? 0.4 : riskLevel === 'medium' ? 0.25 : 0.1;
+                            const targetInvest = totalValue * investRatio;
+                            desiredShares = Math.floor(targetInvest / companyTradePrice);
+                            desiredShares = Math.min(desiredShares, 10000);
+                            desiredShares = Math.max(100, desiredShares);
+                          }
+                        }
+                        // 资金和股票都不足，不参与
                         
                         return (
                           <div key={player.key} className="flex items-center justify-between text-xs p-1 bg-white rounded border border-gray-100">
                             <div className="flex items-center gap-1">
                               <span>{player.icon}</span>
                               <span className="text-gray-700">{player.name}</span>
-                              {player.isUser && <span className="bg-yellow-400 text-yellow-800 px-1 rounded text-xs">你</span>}
-                            </div>
-                            {canParticipate ? (
-                              <span className="text-green-600">
-                                {companyTradeDirection === 'buy' ? `可卖 ${participantShares}股` : `可买 ${participantShares}股`}
+                              <span className="text-gray-400 text-xs">
+                                (现金: ¥{player.money?.toFixed(0)} | {player.shares}股)
                               </span>
-                            ) : (
-                              <span className="text-gray-400">无法参与</span>
-                            )}
+                            </div>
+                            <span className={wantsToTrade ? 'text-green-600' : 'text-gray-400'}>
+                              {wantsToTrade 
+                                ? `想认购 ${desiredShares.toLocaleString()}股${needToSellShares ? '💰' : ''}` 
+                                : '不参与'}
+                            </span>
                           </div>
                         );
                       })}
                     </div>
+                    
                     <button
                       onClick={() => {
                         // 执行公司交易
                         if (onCompanyTrade) {
-                          const participants = stats.playerStats
-                            ?.filter(p => companyTradeDirection === 'buy' ? p.shares > 0 : p.money > companyTradePrice * 100)
-                            .map(p => ({
-                              key: p.key,
-                              name: p.name,
-                              shares: companyTradeDirection === 'buy'
-                                ? Math.min(p.shares, Math.floor(companyTradeShares / stats.playerStats.length))
-                                : Math.floor(p.money / companyTradePrice)
+                          const participants = [];
+                          
+                          // 添加玩家
+                          if (userWantsToTrade && userTradeAmount > 0) {
+                            participants.push({
+                              key: 'user',
+                              name: userPlayerData?.name || '玩家',
+                              desiredShares: userTradeAmount, // 想要认购的数量
+                              needToSellShares: false
+                            });
+                          }
+                          
+                          // 添加动物参与者（与展示逻辑一致的AI决定）
+                          stats.playerStats?.filter(p => !p.isUser).forEach((player) => {
+                            const maxAffordable = Math.floor(player.money / companyTradePrice);
+                            // 使用 player.totalValue（已包含冻结资产）
+                            const totalValue = player.totalValue || (player.money + (player.shares * currentPrice));
+                            const riskLevel = getRiskLevel(player.key);
+                            const participationRatio = getParticipationRatio(player.key, player.profitRate);
+                            
+                            let wantsToTrade = false;
+                            let desiredShares = 0;
+                            let needToSellShares = false;
+                            
+                            if (player.money >= companyTradePrice * 100) {
+                              // 有足够资金
+                              wantsToTrade = Math.random() < participationRatio;
+                              if (wantsToTrade) {
+                                const investRatio = riskLevel === 'high' ? 0.6 : riskLevel === 'medium' ? 0.4 : 0.2;
+                                const targetInvest = player.money * investRatio;
+                                desiredShares = Math.floor(targetInvest / companyTradePrice);
+                                desiredShares = Math.min(desiredShares, 10000, maxAffordable);
+                                desiredShares = Math.max(100, desiredShares);
+                              }
+                            } else if (player.shares > 0 && totalValue >= companyTradePrice * 100) {
+                              // 现金不足但有股票，可能卖股票认购
+                              needToSellShares = true;
+                              wantsToTrade = Math.random() < participationRatio * 0.7;
+                              if (wantsToTrade) {
+                                const investRatio = riskLevel === 'high' ? 0.4 : riskLevel === 'medium' ? 0.25 : 0.1;
+                                const targetInvest = totalValue * investRatio;
+                                desiredShares = Math.floor(targetInvest / companyTradePrice);
+                                desiredShares = Math.min(desiredShares, 10000);
+                                desiredShares = Math.max(100, desiredShares);
+                              }
+                            }
+                            
+                            if (wantsToTrade && desiredShares > 0) {
+                              participants.push({
+                                key: player.key,
+                                name: player.name,
+                                desiredShares: desiredShares, // 想要认购的数量
+                                needToSellShares: needToSellShares,
+                                sharesToSell: needToSellShares ? Math.ceil(desiredShares * companyTradePrice / currentPrice) : 0
+                              });
+                            }
+                          });
+                          
+                          // 计算总认购需求
+                          const totalDesiredShares = participants.reduce((sum, p) => sum + p.desiredShares, 0);
+                          
+                          // 按比例分配股份
+                          let allocatedParticipants = [];
+                          if (participants.length === 0 || totalDesiredShares === 0) {
+                            // 没有参与者，不分配
+                            allocatedParticipants = [];
+                          } else if (totalDesiredShares <= companyTradeShares) {
+                            // 认购需求不超过发行量，全部满足
+                            allocatedParticipants = participants.map(p => ({
+                              ...p,
+                              shares: p.desiredShares,
+                              allocatedRatio: 1
                             }));
-                          onCompanyTrade(companyTradeDirection, companyTradePrice, companyTradeShares, participants);
+                          } else {
+                            // 认购需求超过发行量，按比例分配
+                            const allocationRatio = companyTradeShares / totalDesiredShares;
+                            let allocatedTotal = 0;
+                            allocatedParticipants = participants.map((p, index) => {
+                              let allocatedShares;
+                              if (index === participants.length - 1) {
+                                // 最后一个参与者获得剩余股份，避免舍入误差
+                                allocatedShares = companyTradeShares - allocatedTotal;
+                              } else {
+                                allocatedShares = Math.floor(p.desiredShares * allocationRatio);
+                                allocatedTotal += allocatedShares;
+                              }
+                              
+                              // 根据实际分配的股数重新计算需要卖多少股票
+                              const actualCost = allocatedShares * companyTradePrice;
+                              const needToSell = p.needToSellShares && allocatedShares > 0;
+                              // 如果需要卖股票，计算需要卖多少股才能支付
+                              const actualSharesToSell = needToSell 
+                                ? Math.min(p.sharesToSell || 0, Math.ceil(actualCost / currentPrice))
+                                : 0;
+                              
+                              return {
+                                ...p,
+                                shares: Math.max(0, allocatedShares),
+                                allocatedRatio: allocationRatio,
+                                needToSellShares: needToSell,
+                                sharesToSell: actualSharesToSell
+                              };
+                            });
+                          }
+                          
+                          // 计算交易结果
+                          const totalSubscribed = allocatedParticipants.reduce((sum, p) => sum + p.shares, 0);
+                          const remainingShares = Math.max(0, companyTradeShares - totalSubscribed);
+                          
+                          setTradeResult({
+                            totalShares: companyTradeShares,
+                            totalDesired: totalDesiredShares,
+                            subscribedShares: totalSubscribed,
+                            remainingShares: remainingShares,
+                            participants: allocatedParticipants,
+                            wasOversubscribed: totalDesiredShares > companyTradeShares
+                          });
+                          
+                          // 只传递实际分配到的股份
+                          onCompanyTrade(companyTradeDirection, companyTradePrice, companyTradeShares, allocatedParticipants);
                         }
                         setCompanyTradeCompleted(true);
+                        setTradeClosed(true); // 确认交易后自动关闭操作界面，展示交易结果
                       }}
                       className="w-full mt-2 px-3 py-1.5 bg-indigo-500 text-white rounded-lg text-xs hover:bg-indigo-600 transition"
                     >
-                      确认交易
+                      确认并执行交易
                     </button>
                   </div>
                 ) : (
+                  // 交易已完成，展示交易结果
                   <div className="bg-green-50 rounded-lg p-2 border border-green-200">
                     <div className="text-center">
                       <div className="text-2xl mb-1">✅</div>
-                      <div className="text-xs text-green-700 font-bold">交易已完成</div>
+                      <div className="text-xs text-green-700 font-bold">交易已执行完成</div>
                       <div className="text-xs text-gray-600 mt-1">
-                        公司{companyTradeDirection === 'buy' ? '回购' : '发行'}了 {companyTradeShares.toLocaleString()} 股
+                        公司发行了 {tradeResult?.subscribedShares?.toLocaleString() || companyTradeShares.toLocaleString()} 股新股 @ ¥{companyTradePrice.toFixed(3)}
+                      </div>
+                      {tradeResult && (
+                        <div className="mt-2 text-left bg-white rounded p-2 border border-gray-200">
+                          <div className="text-xs font-bold text-gray-700 mb-1">📋 交易详情</div>
+                          <div className="space-y-0.5 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">发行总量:</span>
+                              <span>{tradeResult.totalShares?.toLocaleString()}股</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">认购需求:</span>
+                              <span className={tradeResult.wasOversubscribed ? 'text-red-600 font-bold' : ''}>
+                                {tradeResult.totalDesired?.toLocaleString()}股
+                                {tradeResult.wasOversubscribed && ' (超购)'}
+                              </span>
+                            </div>
+                            {tradeResult.wasOversubscribed && (
+                              <div className="flex justify-between">
+                                <span className="text-gray-500">分配比例:</span>
+                                <span className="text-orange-600">
+                                  {(tradeResult.participants?.[0]?.allocatedRatio * 100)?.toFixed(1)}%
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between">
+                              <span className="text-gray-500">实际成交:</span>
+                              <span className="text-green-600 font-bold">
+                                {tradeResult.subscribedShares?.toLocaleString()}股
+                              </span>
+                            </div>
+                            {tradeResult.participants?.length > 0 && (
+                              <div className="mt-1 pt-1 border-t border-gray-100">
+                                <div className="text-gray-500 mb-0.5">认购明细:</div>
+                                <div className="max-h-20 overflow-y-auto">
+                                  {tradeResult.participants.map((p, i) => (
+                                    <div key={i} className="flex justify-between text-gray-600">
+                                      <span>{p.name}</span>
+                                      <span>
+                                        {p.shares.toLocaleString()}股
+                                        {p.allocatedRatio < 1 && ` (${(p.allocatedRatio * 100).toFixed(0)}%)`}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      <div className="mt-2 text-center text-xs text-gray-500">
+                        📋 交易已完成，可点击"下一步"继续大会流程
                       </div>
                     </div>
                   </div>

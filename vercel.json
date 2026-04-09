@@ -1,9 +1,22 @@
 {
+    "buildCommand": "npm run build",
+    "outputDirectory": "build",
+    "framework": null,
     "rewrites": [
         {
             "source": "/(.*)",
             "destination": "/index.html"
         }
     ],
-    "cleanUrls": true
+    "routes": [
+        {
+            "handle": "filesystem"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/index.html"
+        }
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false
 }

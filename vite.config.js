@@ -54,7 +54,7 @@ export default defineConfig(async () => {
         plugins,
         base: '/',
         build: {
-            outDir: 'build',
+            outDir: 'dist',
         },
         resolve: {
             alias: [
